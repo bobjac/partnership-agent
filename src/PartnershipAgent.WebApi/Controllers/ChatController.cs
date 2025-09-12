@@ -11,12 +11,12 @@ namespace PartnershipAgent.WebApi.Controllers;
 [Route("api/[controller]")]
 public class ChatController : ControllerBase
 {
-    private readonly SimpleChatProcessService _chatProcessService;
+    private readonly StepOrchestrationService _stepOrchestrationService;
     private readonly ILogger<ChatController> _logger;
 
-    public ChatController(SimpleChatProcessService chatProcessService, ILogger<ChatController> logger)
+    public ChatController(StepOrchestrationService stepOrchestrationService, ILogger<ChatController> logger)
     {
-        _chatProcessService = chatProcessService;
+        _stepOrchestrationService = stepOrchestrationService;
         _logger = logger;
     }
 
@@ -38,8 +38,9 @@ public class ChatController : ControllerBase
 
         try
         {
-            var response = await _chatProcessService.ProcessChatAsync(request);
-            return Ok(response);
+            // Process the query using the step orchestration service
+            var chatResponse = await _stepOrchestrationService.ProcessRequestAsync(request);
+            return Ok(chatResponse);
         }
         catch (Exception ex)
         {

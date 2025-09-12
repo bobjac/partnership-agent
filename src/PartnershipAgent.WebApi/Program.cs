@@ -2,10 +2,12 @@ using System;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Nest;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Services;
+using PartnershipAgent.Core.Steps;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,13 +33,19 @@ var elasticSearchUri = builder.Configuration["ElasticSearch:Uri"] ?? "http://loc
 var elasticUsername = builder.Configuration["ElasticSearch:Username"];
 var elasticPassword = builder.Configuration["ElasticSearch:Password"];
 
-builder.Services.AddScoped(provider =>
+builder.Services.AddScoped<IKernelBuilder>(provider =>
 {
     var kernelBuilder = Kernel.CreateBuilder();
     kernelBuilder.AddAzureOpenAIChatCompletion(
         deploymentName: azureOpenAIDeploymentName,
         endpoint: azureOpenAIEndpoint,
         apiKey: azureOpenAIApiKey);
+    return kernelBuilder;
+});
+
+builder.Services.AddScoped(provider =>
+{
+    var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
     return kernelBuilder.Build();
 });
 
@@ -53,9 +61,35 @@ if (!string.IsNullOrEmpty(elasticUsername) && !string.IsNullOrEmpty(elasticPassw
 builder.Services.AddSingleton<IElasticClient>(new ElasticClient(settings));
 
 builder.Services.AddScoped<IEntityResolutionAgent, EntityResolutionAgent>();
-builder.Services.AddScoped<IFAQAgent, FAQAgent>();
+builder.Services.AddScoped<IFAQAgent>(provider =>
+{
+    var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
+    var elasticSearchService = provider.GetRequiredService<IElasticSearchService>();
+    var logger = provider.GetRequiredService<ILogger<FAQAgent>>();
+    
+    // Create a simple IRequestedBy implementation for this context
+    var requestedBy = new SimpleRequestedBy();
+    var sessionId = Guid.NewGuid();
+    
+    return new FAQAgent(sessionId, kernelBuilder, elasticSearchService, requestedBy, logger);
+});
 builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
+
+// Register the response channel
+builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalChannel>();
+
+// Register the individual step classes
+builder.Services.AddScoped<EntityResolutionStep>();
+builder.Services.AddScoped<DocumentSearchStep>();
+builder.Services.AddScoped<ResponseGenerationStep>();
+builder.Services.AddScoped<UserResponseStep>();
+
+// Register the step orchestration service
+builder.Services.AddScoped<StepOrchestrationService>();
+
+// Keep the old services for backward compatibility if needed
 builder.Services.AddScoped<SimpleChatProcessService>();
+builder.Services.AddScoped<SimplePartnershipAgentService>();
 
 var app = builder.Build();
 
@@ -70,3 +104,14 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+/// <summary>
+/// Simple implementation of IRequestedBy for the web API context.
+/// </summary>
+public class SimpleRequestedBy : IRequestedBy
+{
+    public string UserId { get; set; } = "mock-user-123";
+    public string CompanyId { get; set; } = "company-123";
+    public string CompanyName { get; set; } = "Default Company";
+    public string ProjectId { get; set; } = "project-123";
+}

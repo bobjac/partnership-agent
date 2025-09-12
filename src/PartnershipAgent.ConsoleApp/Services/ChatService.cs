@@ -62,6 +62,7 @@ public class ChatService
             if (response.IsSuccessStatusCode)
             {
                 var responseContent = await response.Content.ReadAsStringAsync();
+                
                 var chatResponse = JsonSerializer.Deserialize<ChatResponse>(responseContent, new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
@@ -69,7 +70,7 @@ public class ChatService
 
                 if (chatResponse != null)
                 {
-                    Console.WriteLine($"\nAssistant: {chatResponse.Response}");
+                    Console.WriteLine($"\nA: {chatResponse.Response}");
                     
                     if (chatResponse.ExtractedEntities.Count > 0)
                     {

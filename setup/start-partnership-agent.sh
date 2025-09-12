@@ -168,12 +168,13 @@ cd "$PROJECT_ROOT/src/PartnershipAgent.ConsoleApp"
 echo -e "${BLUE}Sending test prompt: 'What are partnership terms and requirements?'${NC}"
 echo -e "${GREEN}==================== CONSOLE APP OUTPUT ====================${NC}"
 
-# Use timeout and expect to automate the console app
-timeout 30s bash -c '
-    echo "What are partnership terms and requirements?" | dotnet run
-    sleep 3
+# Run the console app and send test prompt
+(
+    sleep 1
+    echo "What are partnership terms and requirements?"
+    sleep 30
     echo "quit"
-' 2>/dev/null || true
+) | timeout 60s dotnet run || true
 
 echo -e "${GREEN}==================== END CONSOLE APP OUTPUT ====================${NC}"
 

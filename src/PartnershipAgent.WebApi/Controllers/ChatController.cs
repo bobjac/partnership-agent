@@ -31,7 +31,7 @@ public class ChatController : ControllerBase
         }
 
         request.UserId = "mock-user-123";
-        request.TenantId = "mock-tenant-456";
+        request.TenantId = "tenant-123";
 
         _logger.LogInformation("Processing request for User: {UserId}, Tenant: {TenantId}", 
             request.UserId, request.TenantId);

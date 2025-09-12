@@ -1,0 +1,117 @@
+using System;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
+using Nest;
+using PartnershipAgent.Core.Agents;
+using PartnershipAgent.Core.Services;
+using PartnershipAgent.Core.Steps;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var azureOpenAIEndpoint = builder.Configuration["AzureOpenAI:Endpoint"] 
+    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
+    ?? throw new InvalidOperationException("Azure OpenAI endpoint not found in configuration or environment variables");
+
+var azureOpenAIApiKey = builder.Configuration["AzureOpenAI:ApiKey"] 
+    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY") 
+    ?? throw new InvalidOperationException("Azure OpenAI API key not found in configuration or environment variables");
+
+var azureOpenAIDeploymentName = builder.Configuration["AzureOpenAI:DeploymentName"] 
+    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
+    ?? "gpt-35-turbo";
+
+var azureOpenAIApiVersion = builder.Configuration["AzureOpenAI:ApiVersion"] 
+    ?? "2024-02-15-preview";
+var elasticSearchUri = builder.Configuration["ElasticSearch:Uri"] ?? "http://localhost:9200";
+var elasticUsername = builder.Configuration["ElasticSearch:Username"];
+var elasticPassword = builder.Configuration["ElasticSearch:Password"];
+
+builder.Services.AddScoped<IKernelBuilder>(provider =>
+{
+    var kernelBuilder = Kernel.CreateBuilder();
+    kernelBuilder.AddAzureOpenAIChatCompletion(
+        deploymentName: azureOpenAIDeploymentName,
+        endpoint: azureOpenAIEndpoint,
+        apiKey: azureOpenAIApiKey);
+    return kernelBuilder;
+});
+
+builder.Services.AddScoped(provider =>
+{
+    var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
+    return kernelBuilder.Build();
+});
+
+var settings = new ConnectionSettings(new Uri(elasticSearchUri))
+    .DefaultIndex("partnership-documents")
+    .DisableDirectStreaming();
+
+if (!string.IsNullOrEmpty(elasticUsername) && !string.IsNullOrEmpty(elasticPassword))
+{
+    settings = settings.BasicAuthentication(elasticUsername, elasticPassword);
+}
+
+builder.Services.AddSingleton<IElasticClient>(new ElasticClient(settings));
+
+builder.Services.AddScoped<IEntityResolutionAgent, EntityResolutionAgent>();
+builder.Services.AddScoped<IFAQAgent>(provider =>
+{
+    var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
+    var elasticSearchService = provider.GetRequiredService<IElasticSearchService>();
+    var logger = provider.GetRequiredService<ILogger<FAQAgent>>();
+    
+    // Create a simple IRequestedBy implementation for this context
+    var requestedBy = new SimpleRequestedBy();
+    var sessionId = Guid.NewGuid();
+    
+    return new FAQAgent(sessionId, kernelBuilder, elasticSearchService, requestedBy, logger);
+});
+builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
+
+// Register the response channel
+builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalChannel>();
+
+// Register the individual step classes
+builder.Services.AddScoped<EntityResolutionStep>();
+builder.Services.AddScoped<DocumentSearchStep>();
+builder.Services.AddScoped<ResponseGenerationStep>();
+builder.Services.AddScoped<UserResponseStep>();
+
+// Register the step orchestration service
+builder.Services.AddScoped<StepOrchestrationService>();
+
+// Keep the old services for backward compatibility if needed
+builder.Services.AddScoped<SimpleChatProcessService>();
+builder.Services.AddScoped<SimplePartnershipAgentService>();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseHttpsRedirection();
+app.UseAuthorization();
+app.MapControllers();
+
+app.Run();
+
+/// <summary>
+/// Simple implementation of IRequestedBy for the web API context.
+/// </summary>
+public class SimpleRequestedBy : IRequestedBy
+{
+    public string UserId { get; set; } = "mock-user-123";
+    public string CompanyId { get; set; } = "company-123";
+    public string CompanyName { get; set; } = "Default Company";
+    public string ProjectId { get; set; } = "project-123";
+}

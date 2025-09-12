@@ -1,0 +1,8 @@
+{ "index": { "_index": "partnership-documents", "_id": "doc1" } }
+{ "id": "doc1", "title": "Partnership Agreement Template", "content": "This document outlines the standard terms for partnership agreements including revenue sharing, responsibilities, and termination clauses. Partners must contribute minimum 10% effort and receive revenue based on contribution tiers.", "category": "templates", "tenantId": "tenant-123", "score": 0.95 }
+{ "index": { "_index": "partnership-documents", "_id": "doc2" } }
+{ "id": "doc2", "title": "Revenue Sharing Guidelines", "content": "Revenue sharing should be based on contribution levels: Tier 1 partners receive 30%, Tier 2 receive 20%, and Tier 3 receive 10% of net revenue. All calculations are done quarterly.", "category": "guidelines", "tenantId": "tenant-123", "score": 0.87 }
+{ "index": { "_index": "partnership-documents", "_id": "doc3" } }
+{ "id": "doc3", "title": "Partnership Compliance Requirements", "content": "All partnerships must comply with regulatory requirements including documentation of revenue streams, partner verification, and quarterly reporting to relevant authorities.", "category": "policies", "tenantId": "tenant-123", "score": 0.82 }
+{ "index": { "_index": "partnership-documents", "_id": "doc4" } }
+{ "id": "doc4", "title": "Standard Partnership Contract", "content": "The standard partnership contract includes terms for: intellectual property rights, liability distribution, termination procedures, and dispute resolution mechanisms.", "category": "contracts", "tenantId": "tenant-456", "score": 0.91 }

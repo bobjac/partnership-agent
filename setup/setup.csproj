@@ -8,9 +8,6 @@
     <RootNamespace>PartnershipAgent.Setup</RootNamespace>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Compile Include="CrossPlatformSetup.cs" />
-  </ItemGroup>
 
   <ItemGroup>
     <None Include="*.json" CopyToOutputDirectory="PreserveNewest" />

@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Net.Http.Headers;
 
 namespace PartnershipAgent.Setup;
 
@@ -20,6 +21,13 @@ public class CrossPlatformSetup
     private static readonly HttpClient _httpClient = new();
     private static readonly string _projectRoot = GetProjectRoot();
     private static readonly string _setupDir = Path.Combine(_projectRoot, "setup");
+    
+    private static class ElasticCredentials
+    {
+        public static string Uri { get; set; } = "http://localhost:9200";
+        public static string Username { get; set; } = "elastic";
+        public static string Password { get; set; } = "";
+    }
 
     public static async Task<int> Main(string[] args)
     {
@@ -34,34 +42,53 @@ public class CrossPlatformSetup
             if (!await CheckPrerequisites())
                 return 1;
 
-            // Step 2: Clean up existing containers
-            await CleanupContainers();
+            // Step 2: Check for existing Elasticsearch and extract credentials
+            bool elasticRunning = await DetectElasticsearch();
+            
+            if (!elasticRunning)
+            {
+                // Step 3: Clean up existing containers
+                await CleanupContainers();
 
-            // Step 3: Start Elasticsearch
-            if (!await StartElasticsearch())
-                return 1;
+                // Step 4: Start Elasticsearch
+                if (!await StartElasticsearch())
+                    return 1;
+                
+                // Set default credentials for new instance
+                ElasticCredentials.Password = "elastic123";
+            }
 
-            // Step 4: Setup index and documents
+            // Step 5: Setup index and documents
             if (!await SetupElasticsearchData())
                 return 1;
 
-            // Step 5: Configure user secrets
+            // Step 6: Configure user secrets
             if (!await ConfigureUserSecrets())
                 return 1;
 
-            // Step 6: Build solution
+            // Step 7: Build solution
             if (!await BuildSolution())
                 return 1;
 
-            // Step 7: Test with Web API and Console App
+            // Step 8: Test with Web API and Console App
             await RunTests();
 
             Console.WriteLine("\n🎉 Setup completed successfully!");
             Console.WriteLine("\nSummary:");
-            Console.WriteLine("• Elasticsearch: http://localhost:9200");
+            Console.WriteLine($"• Elasticsearch: {ElasticCredentials.Uri}");
+            if (!string.IsNullOrEmpty(ElasticCredentials.Username))
+            {
+                Console.WriteLine($"• Username: {ElasticCredentials.Username}");
+                Console.WriteLine("• Password: ******** (configured in user secrets)");
+            }
+            else
+            {
+                Console.WriteLine("• Authentication: None (open instance)");
+            }
             Console.WriteLine("• Index: partnership-documents");
             Console.WriteLine("• Documents: 8 with rich citation content");
             Console.WriteLine("• Citation functionality: Active");
+            Console.WriteLine("• User secrets: Configured for PartnershipAgent.WebApi");
 
             return 0;
         }
@@ -72,24 +99,99 @@ public class CrossPlatformSetup
         }
     }
 
-    private static async Task<bool> CheckPrerequisites()
+    private static Task<bool> CheckPrerequisites()
     {
         Console.WriteLine("\n📋 Checking prerequisites...");
 
         if (!IsCommandAvailable("docker"))
         {
             Console.WriteLine("❌ Docker is not installed or not in PATH");
-            return false;
+            return Task.FromResult(false);
         }
 
         if (!IsCommandAvailable("dotnet"))
         {
             Console.WriteLine("❌ .NET SDK is not installed or not in PATH");
-            return false;
+            return Task.FromResult(false);
         }
 
         Console.WriteLine("✅ All prerequisites found");
-        return true;
+        return Task.FromResult(true);
+    }
+
+    private static async Task<bool> DetectElasticsearch()
+    {
+        Console.WriteLine("\n🔍 Detecting existing Elasticsearch instance...");
+        
+        try
+        {
+            // First try without authentication
+            var response = await _httpClient.GetAsync("http://localhost:9200/_cluster/health?timeout=5s");
+            if (response.IsSuccessStatusCode)
+            {
+                Console.WriteLine("✅ Found Elasticsearch without authentication");
+                ElasticCredentials.Uri = "http://localhost:9200";
+                ElasticCredentials.Username = "";
+                ElasticCredentials.Password = "";
+                return true;
+            }
+        }
+        catch { }
+
+        // Try to extract credentials from running Docker container
+        if (await ExtractDockerCredentials())
+        {
+            Console.WriteLine("✅ Found Elasticsearch with extracted credentials");
+            return true;
+        }
+
+        Console.WriteLine("ℹ️ No existing Elasticsearch found, will start new instance");
+        return false;
+    }
+
+    private static async Task<bool> ExtractDockerCredentials()
+    {
+        try
+        {
+            // Get running Elasticsearch containers
+            var output = await GetCommandOutput("docker", "ps --filter \"ancestor=docker.elastic.co/elasticsearch/elasticsearch\" --format \"{{.Names}}\"");
+            
+            if (string.IsNullOrWhiteSpace(output))
+                return false;
+
+            var containerName = output.Trim().Split('\n')[0];
+            Console.WriteLine($"Found Elasticsearch container: {containerName}");
+
+            // Try to extract password from environment variables
+            var envOutput = await GetCommandOutput("docker", $"exec {containerName} printenv");
+            
+            foreach (var line in envOutput.Split('\n'))
+            {
+                if (line.StartsWith("ELASTIC_PASSWORD="))
+                {
+                    ElasticCredentials.Password = line.Substring("ELASTIC_PASSWORD=".Length);
+                    ElasticCredentials.Username = "elastic";
+                    
+                    // Test the credentials
+                    var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ElasticCredentials.Username}:{ElasticCredentials.Password}"));
+                    using var client = new HttpClient();
+                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+                    
+                    var response = await client.GetAsync("http://localhost:9200/_cluster/health");
+                    if (response.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine($"✅ Extracted credentials - Username: {ElasticCredentials.Username}");
+                        return true;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Could not extract credentials: {ex.Message}");
+        }
+
+        return false;
     }
 
     private static async Task CleanupContainers()
@@ -112,7 +214,8 @@ public class CrossPlatformSetup
             .Append("run -d --name elasticsearch-secure ")
             .Append("-p 9200:9200 -p 9300:9300 ")
             .Append("-e \"discovery.type=single-node\" ")
-            .Append("-e \"xpack.security.enabled=false\" ")
+            .Append("-e \"xpack.security.enabled=true\" ")
+            .Append("-e \"ELASTIC_PASSWORD=elastic123\" ")
             .Append("-e \"ES_JAVA_OPTS=-Xms512m -Xmx512m\" ")
             .Append("docker.elastic.co/elasticsearch/elasticsearch:7.17.0")
             .ToString();
@@ -126,7 +229,8 @@ public class CrossPlatformSetup
         {
             try
             {
-                var response = await _httpClient.GetAsync("http://localhost:9200/_cluster/health");
+                var client = CreateHttpClientWithAuth();
+                var response = await client.GetAsync("http://localhost:9200/_cluster/health");
                 if (response.IsSuccessStatusCode)
                 {
                     Console.WriteLine("✅ Elasticsearch is ready");
@@ -148,12 +252,14 @@ public class CrossPlatformSetup
     {
         Console.WriteLine("\n📊 Setting up Elasticsearch data...");
 
+        var client = CreateHttpClientWithAuth();
+        
         // Create index
         var mappingFile = Path.Combine(_setupDir, "setup-elasticsearch.json");
         var mapping = await File.ReadAllTextAsync(mappingFile);
         
         var content = new StringContent(mapping, Encoding.UTF8, "application/json");
-        var response = await _httpClient.PutAsync("http://localhost:9200/partnership-documents", content);
+        var response = await client.PutAsync("http://localhost:9200/partnership-documents", content);
         
         if (!response.IsSuccessStatusCode)
         {
@@ -167,7 +273,7 @@ public class CrossPlatformSetup
         var bulkData = await File.ReadAllTextAsync(bulkFile);
         
         content = new StringContent(bulkData, Encoding.UTF8, "application/json");
-        response = await _httpClient.PostAsync("http://localhost:9200/partnership-documents/_bulk", content);
+        response = await client.PostAsync("http://localhost:9200/partnership-documents/_bulk", content);
         
         if (!response.IsSuccessStatusCode)
         {
@@ -185,8 +291,29 @@ public class CrossPlatformSetup
         
         var webApiDir = Path.Combine(_projectRoot, "src", "PartnershipAgent.WebApi");
         
-        return await RunCommand("dotnet", "user-secrets set \"ElasticSearch:Uri\" \"http://localhost:9200\"", 
-            workingDirectory: webApiDir);
+        Console.WriteLine($"Setting Elasticsearch URI: {ElasticCredentials.Uri}");
+        if (!await RunCommand("dotnet", $"user-secrets set \"ElasticSearch:Uri\" \"{ElasticCredentials.Uri}\"", 
+            workingDirectory: webApiDir))
+            return false;
+
+        if (!string.IsNullOrEmpty(ElasticCredentials.Username))
+        {
+            Console.WriteLine($"Setting Elasticsearch Username: {ElasticCredentials.Username}");
+            if (!await RunCommand("dotnet", $"user-secrets set \"ElasticSearch:Username\" \"{ElasticCredentials.Username}\"", 
+                workingDirectory: webApiDir))
+                return false;
+        }
+
+        if (!string.IsNullOrEmpty(ElasticCredentials.Password))
+        {
+            Console.WriteLine("Setting Elasticsearch Password: ********");
+            if (!await RunCommand("dotnet", $"user-secrets set \"ElasticSearch:Password\" \"{ElasticCredentials.Password}\"", 
+                workingDirectory: webApiDir))
+                return false;
+        }
+
+        Console.WriteLine("✅ User secrets configured successfully");
+        return true;
     }
 
     private static async Task<bool> BuildSolution()
@@ -196,7 +323,7 @@ public class CrossPlatformSetup
         return await RunCommand("dotnet", "build PartnershipAgent.sln", workingDirectory: _projectRoot);
     }
 
-    private static async Task RunTests()
+    private static Task RunTests()
     {
         Console.WriteLine("\n🧪 Running citation tests...");
         
@@ -220,6 +347,8 @@ public class CrossPlatformSetup
         Console.WriteLine("\n💡 Run the console app manually to see full citation details:");
         Console.WriteLine($"cd {consoleAppDir}");
         Console.WriteLine("dotnet run");
+        
+        return Task.CompletedTask;
     }
 
     private static async Task<bool> RunCommand(string command, string arguments, 
@@ -254,6 +383,43 @@ public class CrossPlatformSetup
         }
 
         return true;
+    }
+
+    private static HttpClient CreateHttpClientWithAuth()
+    {
+        var client = new HttpClient();
+        
+        if (!string.IsNullOrEmpty(ElasticCredentials.Username) && !string.IsNullOrEmpty(ElasticCredentials.Password))
+        {
+            var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ElasticCredentials.Username}:{ElasticCredentials.Password}"));
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+        }
+        
+        return client;
+    }
+
+    private static async Task<string> GetCommandOutput(string command, string arguments, 
+        string? workingDirectory = null)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = command,
+            Arguments = arguments,
+            WorkingDirectory = workingDirectory ?? Directory.GetCurrentDirectory(),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(startInfo);
+        if (process == null)
+            return "";
+
+        var output = await process.StandardOutput.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        
+        return process.ExitCode == 0 ? output : "";
     }
 
     private static bool IsCommandAvailable(string command)

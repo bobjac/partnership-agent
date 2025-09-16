@@ -254,6 +254,19 @@ public class CrossPlatformSetup
 
         var client = CreateHttpClientWithAuth();
         
+        // Check if index exists
+        var checkResponse = await client.GetAsync("http://localhost:9200/partnership-documents");
+        if (checkResponse.IsSuccessStatusCode)
+        {
+            Console.WriteLine("ℹ️ Index already exists, deleting and recreating...");
+            var deleteResponse = await client.DeleteAsync("http://localhost:9200/partnership-documents");
+            if (!deleteResponse.IsSuccessStatusCode)
+            {
+                Console.WriteLine("❌ Failed to delete existing index");
+                return false;
+            }
+        }
+        
         // Create index
         var mappingFile = Path.Combine(_setupDir, "setup-elasticsearch.json");
         var mapping = await File.ReadAllTextAsync(mappingFile);
@@ -263,7 +276,8 @@ public class CrossPlatformSetup
         
         if (!response.IsSuccessStatusCode)
         {
-            Console.WriteLine("❌ Failed to create index");
+            var errorContent = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ Failed to create index: {errorContent}");
             return false;
         }
         Console.WriteLine("✅ Index created");
@@ -277,7 +291,8 @@ public class CrossPlatformSetup
         
         if (!response.IsSuccessStatusCode)
         {
-            Console.WriteLine("❌ Failed to index documents");
+            var errorContent = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ Failed to index documents: {errorContent}");
             return false;
         }
         Console.WriteLine("✅ Documents indexed");

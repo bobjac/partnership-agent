@@ -9,6 +9,8 @@
     <PackageReference Include="Microsoft.SemanticKernel" Version="1.48.0" />
     <PackageReference Include="Microsoft.SemanticKernel.Agents.Core" Version="1.48.0" />
     <PackageReference Include="Elasticsearch.Net" Version="7.17.5" />
+    <PackageReference Include="Microsoft.SemanticKernel.Process.Core" Version="1.48.0-alpha" />
+    <PackageReference Include="Microsoft.SemanticKernel.Process.LocalRuntime" Version="1.48.0-alpha" />
     <PackageReference Include="NEST" Version="7.17.5" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />

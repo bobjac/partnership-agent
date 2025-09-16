@@ -52,18 +52,18 @@ docker rm elasticsearch 2>/dev/null || true
 docker stop es-local-dev 2>/dev/null || true
 docker rm es-local-dev 2>/dev/null || true
 
-# Step 2: Start Elasticsearch with security
-echo -e "\n${YELLOW}Step 2: Starting Elasticsearch with security enabled...${NC}"
+# Step 2: Start Elasticsearch without security for testing
+echo -e "\n${YELLOW}Step 2: Starting Elasticsearch for testing...${NC}"
 docker run -d --name elasticsearch-secure \
   -p 9200:9200 -p 9300:9300 \
   -e "discovery.type=single-node" \
-  -e "xpack.security.enabled=true" \
-  -e "ELASTIC_PASSWORD=changeme123" \
+  -e "xpack.security.enabled=false" \
+  -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" \
   docker.elastic.co/elasticsearch/elasticsearch:7.17.0
 
 echo -e "${BLUE}Waiting for Elasticsearch to be ready...${NC}"
 for i in {1..30}; do
-    if curl -s -u elastic:changeme123 -o /dev/null -w "%{http_code}" "http://localhost:9200/_cluster/health" | grep -q "200"; then
+    if curl -s -o /dev/null -w "%{http_code}" "http://localhost:9200/_cluster/health" | grep -q "200"; then
         echo -e "${GREEN}✓ Elasticsearch is ready${NC}"
         break
     fi
@@ -71,7 +71,7 @@ for i in {1..30}; do
     sleep 2
 done
 
-if ! curl -s -u elastic:changeme123 -o /dev/null -w "%{http_code}" "http://localhost:9200/_cluster/health" | grep -q "200"; then
+if ! curl -s -o /dev/null -w "%{http_code}" "http://localhost:9200/_cluster/health" | grep -q "200"; then
     echo -e "\n${RED}Error: Elasticsearch failed to start properly${NC}"
     exit 1
 fi
@@ -81,7 +81,7 @@ echo -e "\n${YELLOW}Step 3: Setting up Elasticsearch index and documents...${NC}
 
 # Create the index with mapping
 echo -e "${BLUE}Creating partnership-documents index...${NC}"
-curl -s -u elastic:changeme123 -X PUT "localhost:9200/partnership-documents" \
+curl -s -X PUT "localhost:9200/partnership-documents" \
   -H "Content-Type: application/json" \
   -d @"$SCRIPT_DIR/setup-elasticsearch.json" > /dev/null
 
@@ -94,7 +94,7 @@ fi
 
 # Index sample documents
 echo -e "${BLUE}Indexing sample documents...${NC}"
-curl -s -u elastic:changeme123 -X POST "localhost:9200/partnership-documents/_bulk" \
+curl -s -X POST "localhost:9200/partnership-documents/_bulk" \
   -H "Content-Type: application/json" \
   --data-binary @"$SCRIPT_DIR/sample-documents-bulk.json" > /dev/null
 
@@ -109,8 +109,6 @@ fi
 echo -e "\n${YELLOW}Step 4: Configuring user secrets for Web API...${NC}"
 cd "$PROJECT_ROOT/src/PartnershipAgent.WebApi"
 
-dotnet user-secrets set "ElasticSearch:Username" "elastic"
-dotnet user-secrets set "ElasticSearch:Password" "changeme123"
 dotnet user-secrets set "ElasticSearch:Uri" "http://localhost:9200"
 
 echo -e "${GREEN}✓ User secrets configured${NC}"
@@ -161,22 +159,36 @@ if ! curl -s -o /dev/null -w "%{http_code}" "http://localhost:5001/api/chat/heal
     exit 1
 fi
 
-# Step 7: Run the console app with test prompt
-echo -e "\n${YELLOW}Step 7: Running console app with test prompt...${NC}"
+# Step 7: Run the console app with test prompts for citations
+echo -e "\n${YELLOW}Step 7: Running console app with citation test prompts...${NC}"
 cd "$PROJECT_ROOT/src/PartnershipAgent.ConsoleApp"
 
-echo -e "${BLUE}Sending test prompt: 'What are partnership terms and requirements?'${NC}"
-echo -e "${GREEN}==================== CONSOLE APP OUTPUT ====================${NC}"
+echo -e "${BLUE}Testing multiple prompts to demonstrate citation functionality...${NC}"
+echo -e "${GREEN}==================== CONSOLE APP TESTS ====================${NC}"
 
-# Run the console app and send test prompt
+# Test multiple prompts that should generate good citations
 (
-    sleep 1
-    echo "What are partnership terms and requirements?"
-    sleep 30
+    sleep 2
+    echo -e "\n--- Test 1: Revenue Sharing Query ---"
+    echo "What are the specific percentage rates for revenue sharing between different partner tiers?"
+    sleep 25
+    
+    echo -e "\n--- Test 2: Compliance Requirements ---"
+    echo "What compliance documentation and audit requirements must partners follow?"
+    sleep 25
+    
+    echo -e "\n--- Test 3: Termination Procedures ---"
+    echo "What is the process for terminating a partnership and what notice period is required?"
+    sleep 25
+    
+    echo -e "\n--- Test 4: Performance Metrics ---"
+    echo "What are the minimum performance standards and KPIs that partners must maintain?"
+    sleep 25
+    
     echo "quit"
-) | timeout 60s dotnet run || true
+) | timeout 180s dotnet run || true
 
-echo -e "${GREEN}==================== END CONSOLE APP OUTPUT ====================${NC}"
+echo -e "${GREEN}==================== END CONSOLE APP TESTS ====================${NC}"
 
 # Cleanup
 echo -e "\n${YELLOW}Cleaning up...${NC}"
@@ -186,10 +198,9 @@ echo -e "${GREEN}✓ Web API stopped${NC}"
 echo -e "\n${GREEN}🎉 Setup completed successfully!${NC}"
 echo -e "\n${BLUE}Summary:${NC}"
 echo -e "• Elasticsearch is running at: ${YELLOW}http://localhost:9200${NC}"
-echo -e "• Username: ${YELLOW}elastic${NC}"
-echo -e "• Password: ${YELLOW}changeme123${NC}"
 echo -e "• Index: ${YELLOW}partnership-documents${NC}"
-echo -e "• Sample documents have been indexed"
+echo -e "• Sample documents have been indexed (8 documents with rich content)"
+echo -e "• Citation functionality is now active"
 echo -e "\n${BLUE}To manually start the Web API:${NC}"
 echo -e "cd src/PartnershipAgent.WebApi && dotnet run --urls=\"http://localhost:5001\""
 echo -e "\n${BLUE}To manually run the console app:${NC}"

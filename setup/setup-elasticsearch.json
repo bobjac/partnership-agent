@@ -6,7 +6,12 @@
       },
       "title": {
         "type": "text",
-        "analyzer": "standard"
+        "analyzer": "standard",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
       },
       "content": {
         "type": "text",
@@ -20,11 +25,30 @@
       },
       "score": {
         "type": "float"
+      },
+      "sourcePath": {
+        "type": "keyword"
+      },
+      "lastModified": {
+        "type": "date",
+        "format": "strict_date_optional_time||epoch_millis"
+      },
+      "metadata": {
+        "type": "object",
+        "dynamic": true
       }
     }
   },
   "settings": {
     "number_of_shards": 1,
-    "number_of_replicas": 0
+    "number_of_replicas": 0,
+    "analysis": {
+      "analyzer": {
+        "content_analyzer": {
+          "type": "standard",
+          "stopwords": "_english_"
+        }
+      }
+    }
   }
 }

@@ -18,6 +18,10 @@ public class FAQAgentResponse
     [Description("List of document titles that were used to generate the answer")]
     public List<string> SourceDocuments { get; set; } = [];
 
+    [JsonPropertyName("citations")]
+    [Description("Detailed citations with excerpts and positional information")]
+    public List<DocumentCitation> Citations { get; set; } = [];
+
     [JsonPropertyName("has_complete_answer")]
     [Description("Whether the provided documents contain enough information to fully answer the question")]
     public bool HasCompleteAnswer { get; set; }

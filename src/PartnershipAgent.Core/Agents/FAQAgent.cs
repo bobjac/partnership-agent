@@ -20,6 +20,7 @@ public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
 {
     private readonly IKernelBuilder _kernelBuilder;
     private readonly IElasticSearchService _elasticSearchService;
+    private readonly ICitationService _citationService;
 
     /// <summary>
     /// The name of the agent used for identification in the semantic kernel system.
@@ -39,12 +40,14 @@ public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
         Guid sessionId,
         IKernelBuilder kernelBuilder,
         IElasticSearchService elasticSearchService,
+        ICitationService citationService,
         IRequestedBy requestedBy,
         ILogger<FAQAgent> logger
     ) : base(requestedBy, sessionId, logger)
     {
         _kernelBuilder = kernelBuilder ?? throw new ArgumentNullException(nameof(kernelBuilder));
         _elasticSearchService = elasticSearchService ?? throw new ArgumentNullException(nameof(elasticSearchService));
+        _citationService = citationService ?? throw new ArgumentNullException(nameof(citationService));
 
         InitializeAgent();
     }
@@ -134,7 +137,7 @@ public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
     /// <param name="documents">The relevant documents found by search</param>
     /// <returns>Structured response with answer, confidence, and metadata</returns>
     [KernelFunction, Description("Generates a comprehensive answer to the user's question based on relevant documents.")]
-    public FAQAgentResponse GenerateAnswer(
+    public async Task<FAQAgentResponse> GenerateAnswer(
         [Description("The user's original question")] string query,
         [Description("List of relevant documents to base the answer on")] List<DocumentResult> documents)
     {
@@ -150,15 +153,24 @@ public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
             var hasRelevantInfo = documents.Any() && !string.IsNullOrEmpty(context);
             var confidence = documents.Count >= 2 ? "high" : documents.Count == 1 ? "medium" : "low";
             
+            // Generate the answer content
+            var answerContent = hasRelevantInfo ? 
+                $"Based on the {documents.Count} relevant document(s), here is the answer to your question about {query}." : 
+                "I don't have enough information in the available documents to answer your question.";
+
+            // Extract citations for the answer
+            var citations = hasRelevantInfo ? 
+                await _citationService.ExtractCitationsAsync(query, answerContent, documents) : 
+                new List<DocumentCitation>();
+            
             // This is a simplified version - in practice, the LLM would generate this via the agent
             var response = new FAQAgentResponse
             {
-                Answer = hasRelevantInfo ? 
-                    $"Based on the {documents.Count} relevant document(s), here is the answer to your question about {query}." : 
-                    "I don't have enough information in the available documents to answer your question.",
+                Answer = answerContent,
                 ConfidenceLevel = confidence,
                 HasCompleteAnswer = hasRelevantInfo,
                 SourceDocuments = documents.Select(d => d.Title).ToList(),
+                Citations = citations,
                 FollowUpSuggestions = hasRelevantInfo ? [
                     "What are the specific requirements for partnership compliance?",
                     "How are revenue calculations performed?",
@@ -166,7 +178,8 @@ public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
                 ] : []
             };
 
-            Logger.LogInformation("Generated structured response with confidence: {Confidence}", response.ConfidenceLevel);
+            Logger.LogInformation("Generated structured response with confidence: {Confidence} and {CitationCount} citations", 
+                response.ConfidenceLevel, citations.Count);
             return response;
         }
         catch (Exception ex) when (Log(ex, $"Error generating answer for session {SessionId} with query {query}"))
@@ -185,9 +198,9 @@ public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
     /// </summary>
     public async Task<FAQAgentResponse> GenerateStructuredResponseAsync(string query, List<DocumentResult> relevantDocuments)
     {
-        // For now, delegate to the synchronous version
+        // For now, delegate to the async version
         // In a full implementation, this would use the Agent's chat completion capabilities
-        return await Task.FromResult(GenerateAnswer(query, relevantDocuments));
+        return await GenerateAnswer(query, relevantDocuments);
     }
 
     /// <summary>

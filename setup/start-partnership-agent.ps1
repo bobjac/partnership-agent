@@ -11,12 +11,12 @@ Partnership Agent Setup Script for Windows
 ==========================================
 
 This script will:
-1. Start Elasticsearch with security enabled
-2. Create index and add sample documents  
+1. Start Elasticsearch for testing (without security)
+2. Create index and add enhanced sample documents (8 documents with rich content)  
 3. Configure user secrets for the Web API
 4. Build the solution
 5. Start the Web API
-6. Run the console app with a test prompt
+6. Run the console app with multiple citation test prompts
 
 Prerequisites:
 - Docker Desktop for Windows
@@ -110,15 +110,15 @@ foreach ($container in $containersToStop) {
     }
 }
 
-# Step 2: Start Elasticsearch with security
-Write-Host "`nStep 2: Starting Elasticsearch with security enabled..." -ForegroundColor Yellow
+# Step 2: Start Elasticsearch without security for testing
+Write-Host "`nStep 2: Starting Elasticsearch for testing..." -ForegroundColor Yellow
 
 $dockerArgs = @(
     "run", "-d", "--name", "elasticsearch-secure",
     "-p", "9200:9200", "-p", "9300:9300",
     "-e", "discovery.type=single-node",
-    "-e", "xpack.security.enabled=true",
-    "-e", "ELASTIC_PASSWORD=changeme123",
+    "-e", "xpack.security.enabled=false",
+    "-e", "ES_JAVA_OPTS=-Xms512m -Xmx512m",
     "docker.elastic.co/elasticsearch/elasticsearch:7.17.0"
 )
 
@@ -128,9 +128,8 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Wait for Elasticsearch to be ready
+# Wait for Elasticsearch to be ready (no auth needed)
 $elasticHeaders = @{
-    'Authorization' = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes('elastic:changeme123'))
     'Content-Type' = 'application/json'
 }
 
@@ -158,7 +157,7 @@ Write-Host "Indexing sample documents..." -ForegroundColor Cyan
 $bulkData = Get-Content "$ScriptDir\sample-documents-bulk.json" -Raw
 try {
     $bulkHeaders = $elasticHeaders.Clone()
-    $bulkHeaders['Content-Type'] = 'application/x-ndjson'
+    $bulkHeaders['Content-Type'] = 'application/json'
     $response = Invoke-RestMethod -Uri "http://localhost:9200/partnership-documents/_bulk" -Method Post -Headers $bulkHeaders -Body $bulkData
     Write-Host "✓ Sample documents indexed successfully" -ForegroundColor Green
 }
@@ -172,8 +171,6 @@ Write-Host "`nStep 4: Configuring user secrets for Web API..." -ForegroundColor 
 Push-Location "$ProjectRoot\src\PartnershipAgent.WebApi"
 
 try {
-    dotnet user-secrets set "ElasticSearch:Username" "elastic"
-    dotnet user-secrets set "ElasticSearch:Password" "changeme123"
     dotnet user-secrets set "ElasticSearch:Uri" "http://localhost:9200"
     Write-Host "✓ User secrets configured" -ForegroundColor Green
 }
@@ -208,13 +205,18 @@ finally {
 Write-Host "`nStep 6: Starting Web API..." -ForegroundColor Yellow
 
 # Kill any existing processes on port 5001
-$processesOnPort = Get-NetTCPConnection -LocalPort 5001 -ErrorAction SilentlyContinue
-if ($processesOnPort) {
-    $processesOnPort | ForEach-Object {
-        $processId = $_.OwningProcess
-        Write-Host "Killing process $processId on port 5001" -ForegroundColor Yellow
-        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+try {
+    $processesOnPort = Get-NetTCPConnection -LocalPort 5001 -ErrorAction SilentlyContinue
+    if ($processesOnPort) {
+        $processesOnPort | ForEach-Object {
+            $processId = $_.OwningProcess
+            Write-Host "Killing process $processId on port 5001" -ForegroundColor Yellow
+            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+        }
     }
+}
+catch {
+    # Ignore errors if no processes found
 }
 
 Push-Location "$ProjectRoot\src\PartnershipAgent.WebApi"
@@ -237,26 +239,43 @@ if (!(Wait-ForService -Url "http://localhost:5001/api/chat/health" -ServiceName 
     exit 1
 }
 
-# Step 7: Run the console app with test prompt
-Write-Host "`nStep 7: Running console app with test prompt..." -ForegroundColor Yellow
+# Step 7: Run the console app with citation test prompts
+Write-Host "`nStep 7: Running console app with citation test prompts..." -ForegroundColor Yellow
 Push-Location "$ProjectRoot\src\PartnershipAgent.ConsoleApp"
 
-Write-Host "Sending test prompt: 'What are partnership terms and requirements?'" -ForegroundColor Cyan
-Write-Host "==================== CONSOLE APP OUTPUT ====================" -ForegroundColor Green
+Write-Host "Testing multiple prompts to demonstrate citation functionality..." -ForegroundColor Cyan
+Write-Host "==================== CONSOLE APP TESTS ====================" -ForegroundColor Green
+
+# Define test prompts for citations
+$testPrompts = @(
+    "What are the specific percentage rates for revenue sharing between different partner tiers?",
+    "What compliance documentation and audit requirements must partners follow?",
+    "What is the process for terminating a partnership and what notice period is required?",
+    "What are the minimum performance standards and KPIs that partners must maintain?"
+)
 
 try {
-    # Create a temporary input file for the console app
-    $testInput = "What are partnership terms and requirements?`nquit`n"
-    $testInput | dotnet run
+    foreach ($i in 0..($testPrompts.Length - 1)) {
+        $promptNum = $i + 1
+        Write-Host "`n--- Test $promptNum/4 ---" -ForegroundColor Yellow
+        Write-Host "Prompt: $($testPrompts[$i])" -ForegroundColor Cyan
+        
+        # Create input for console app
+        $testInput = "$($testPrompts[$i])`nquit`n"
+        $testInput | dotnet run
+        
+        Write-Host "--- End Test $promptNum ---" -ForegroundColor Cyan
+        Start-Sleep -Seconds 2
+    }
 }
 catch {
-    Write-Host "Console app execution completed" -ForegroundColor Yellow
+    Write-Host "Console app tests completed" -ForegroundColor Yellow
 }
 finally {
     Pop-Location
 }
 
-Write-Host "==================== END CONSOLE APP OUTPUT ====================" -ForegroundColor Green
+Write-Host "==================== END CONSOLE APP TESTS ====================" -ForegroundColor Green
 
 # Cleanup
 Write-Host "`nCleaning up..." -ForegroundColor Yellow
@@ -267,13 +286,10 @@ Write-Host "`n🎉 Setup completed successfully!" -ForegroundColor Green
 Write-Host "`nSummary:" -ForegroundColor Cyan
 Write-Host "• Elasticsearch is running at: " -NoNewline -ForegroundColor Cyan
 Write-Host "http://localhost:9200" -ForegroundColor Yellow
-Write-Host "• Username: " -NoNewline -ForegroundColor Cyan
-Write-Host "elastic" -ForegroundColor Yellow
-Write-Host "• Password: " -NoNewline -ForegroundColor Cyan
-Write-Host "changeme123" -ForegroundColor Yellow
 Write-Host "• Index: " -NoNewline -ForegroundColor Cyan
 Write-Host "partnership-documents" -ForegroundColor Yellow
-Write-Host "• Sample documents have been indexed" -ForegroundColor Cyan
+Write-Host "• Sample documents have been indexed (8 documents with rich content)" -ForegroundColor Cyan
+Write-Host "• Citation functionality is now active" -ForegroundColor Cyan
 
 Write-Host "`nTo manually start the Web API:" -ForegroundColor Cyan
 Write-Host "cd src\PartnershipAgent.WebApi && dotnet run --urls=`"http://localhost:5001`"" -ForegroundColor White
@@ -283,3 +299,6 @@ Write-Host "cd src\PartnershipAgent.ConsoleApp && dotnet run" -ForegroundColor W
 
 Write-Host "`nTo stop Elasticsearch:" -ForegroundColor Cyan
 Write-Host "docker stop elasticsearch-secure" -ForegroundColor White
+
+Write-Host "`nTo test citations specifically:" -ForegroundColor Cyan
+Write-Host ".\setup\test-citations.ps1" -ForegroundColor White

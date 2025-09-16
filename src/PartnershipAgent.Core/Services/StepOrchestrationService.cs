@@ -2,44 +2,40 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Process;
 using PartnershipAgent.Core.Models;
 using PartnershipAgent.Core.Steps;
+
+#pragma warning disable SKEXP0080
 
 namespace PartnershipAgent.Core.Services;
 
 /// <summary>
-/// Service that orchestrates the execution of partnership agent steps using event-driven transitions.
+/// Service that orchestrates the execution of partnership agent steps using Semantic Kernel's process framework.
 /// This provides controlled flow, auditability, and early termination capabilities.
 /// </summary>
 public class StepOrchestrationService
 {
     private static readonly ActivitySource _activitySource = new("PartnershipAgent.StepOrchestration");
-    private readonly EntityResolutionStep _entityResolutionStep;
-    private readonly DocumentSearchStep _documentSearchStep;
-    private readonly ResponseGenerationStep _responseGenerationStep;
-    private readonly UserResponseStep _userResponseStep;
+    private readonly Kernel _kernel;
     private readonly ILogger<StepOrchestrationService> _logger;
 
     /// <summary>
     /// Constructor for StepOrchestrationService.
     /// </summary>
     public StepOrchestrationService(
-        EntityResolutionStep entityResolutionStep,
-        DocumentSearchStep documentSearchStep,
-        ResponseGenerationStep responseGenerationStep,
-        UserResponseStep userResponseStep,
+        Kernel kernel,
         ILogger<StepOrchestrationService> logger)
     {
-        _entityResolutionStep = entityResolutionStep ?? throw new ArgumentNullException(nameof(entityResolutionStep));
-        _documentSearchStep = documentSearchStep ?? throw new ArgumentNullException(nameof(documentSearchStep));
-        _responseGenerationStep = responseGenerationStep ?? throw new ArgumentNullException(nameof(responseGenerationStep));
-        _userResponseStep = userResponseStep ?? throw new ArgumentNullException(nameof(userResponseStep));
+        _kernel = kernel ?? throw new ArgumentNullException(nameof(kernel));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
-    /// Processes a chat request through the orchestrated step pipeline.
+    /// Processes a chat request through the orchestrated step pipeline using Semantic Kernel's process framework.
     /// </summary>
     /// <param name="request">The chat request to process</param>
     /// <returns>The final chat response</returns>
@@ -67,33 +63,20 @@ public class StepOrchestrationService
 
             _logger.LogInformation("Starting step orchestration for session {SessionId}", processModel.SessionId);
 
-            // Execute the step pipeline with event-driven transitions
-            var currentEvent = AgentOrchestrationEvents.StartProcess;
-            var stepExecutions = new List<string>();
-
-            while (currentEvent != AgentOrchestrationEvents.ProcessCompleted && currentEvent != AgentOrchestrationEvents.ProcessError)
-            {
-                var nextEvent = await ExecuteStepByEvent(currentEvent, processModel);
-                stepExecutions.Add($"{currentEvent} -> {nextEvent}");
-                
-                _logger.LogInformation("Step transition: {CurrentEvent} -> {NextEvent} for session {SessionId}", 
-                    currentEvent, nextEvent, processModel.SessionId);
-                
-                currentEvent = nextEvent;
-
-                // Safety check to prevent infinite loops
-                if (stepExecutions.Count > 10)
+            // Build and execute the process using Semantic Kernel's native process framework
+            var process = BuildProcess(processModel.SessionId);
+            
+            await using LocalKernelProcessContext localProcess = await process.StartAsync(
+                _kernel,
+                new KernelProcessEvent()
                 {
-                    _logger.LogError("Too many step executions for session {SessionId}. Possible infinite loop detected.", processModel.SessionId);
-                    break;
-                }
-            }
+                    Id = AgentOrchestrationEvents.StartProcess,
+                    Data = processModel
+                });
 
-            _logger.LogInformation("Step orchestration completed for session {SessionId}. Final event: {FinalEvent}", 
-                processModel.SessionId, currentEvent);
+            _logger.LogInformation("Step orchestration completed for session {SessionId}", processModel.SessionId);
 
-            activity?.SetTag("orchestration.final_event", currentEvent);
-            activity?.SetTag("orchestration.steps_executed", stepExecutions.Count);
+            activity?.SetTag("orchestration.final_event", AgentOrchestrationEvents.ProcessCompleted);
 
             return CreateChatResponse(request, processModel);
         }
@@ -105,23 +88,64 @@ public class StepOrchestrationService
     }
 
     /// <summary>
-    /// Executes the appropriate step based on the current event.
+    /// Builds the process using Semantic Kernel's native ProcessBuilder.
     /// </summary>
-    /// <param name="eventId">The current event ID</param>
-    /// <param name="processModel">The process model containing state</param>
-    /// <returns>The next event ID to transition to</returns>
-    private async Task<string> ExecuteStepByEvent(string eventId, ProcessModel processModel)
+    /// <param name="sessionId">The session ID for the process</param>
+    /// <returns>The built kernel process</returns>
+    private KernelProcess BuildProcess(Guid sessionId)
     {
-        return eventId switch
-        {
-            AgentOrchestrationEvents.StartProcess => await _entityResolutionStep.ExecuteAsync(processModel),
-            AgentOrchestrationEvents.EntityExtractionCompleted => await _documentSearchStep.ExecuteAsync(processModel),
-            AgentOrchestrationEvents.DocumentSearchCompleted => await _responseGenerationStep.ExecuteAsync(processModel),
-            AgentOrchestrationEvents.ResponseGenerationCompleted => await _userResponseStep.ExecuteAsync(processModel),
-            AgentOrchestrationEvents.UserClarificationNeeded => await _userResponseStep.ExecuteAsync(processModel),
-            AgentOrchestrationEvents.ProcessError => await _userResponseStep.ExecuteAsync(processModel),
-            _ => throw new InvalidOperationException($"Unknown event ID: {eventId}")
-        };
+        ProcessBuilder processBuilder = new("PartnershipAgent");
+        
+        // Add steps using the native ProcessBuilder pattern
+        var entityResolutionStep = processBuilder.AddStepFromType<EntityResolutionStep>();
+        var documentSearchStep = processBuilder.AddStepFromType<DocumentSearchStep>();
+        var responseGenerationStep = processBuilder.AddStepFromType<ResponseGenerationStep>();
+        var userResponseStep = processBuilder.AddStepFromType<UserResponseStep>();
+
+        // Configure event-driven flow using native process framework
+        processBuilder
+            .OnInputEvent(AgentOrchestrationEvents.StartProcess)
+            .SendEventTo(new ProcessFunctionTargetBuilder(entityResolutionStep, "ExtractEntitiesAsync"));
+
+        entityResolutionStep
+            .OnEvent(AgentOrchestrationEvents.EntityExtractionCompleted)
+            .SendEventTo(new ProcessFunctionTargetBuilder(documentSearchStep, "SearchDocumentsAsync"));
+
+        documentSearchStep
+            .OnEvent(AgentOrchestrationEvents.DocumentSearchCompleted)
+            .SendEventTo(new ProcessFunctionTargetBuilder(responseGenerationStep, "GenerateResponseAsync"));
+
+        documentSearchStep
+            .OnEvent(AgentOrchestrationEvents.UserClarificationNeeded)
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+
+        responseGenerationStep
+            .OnEvent(AgentOrchestrationEvents.ResponseGenerationCompleted)
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+
+        responseGenerationStep
+            .OnEvent(AgentOrchestrationEvents.UserClarificationNeeded)
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+
+        // Error handling - route all errors to user response step
+        entityResolutionStep
+            .OnEvent(AgentOrchestrationEvents.ProcessError)
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+
+        documentSearchStep
+            .OnEvent(AgentOrchestrationEvents.ProcessError)
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+
+        responseGenerationStep
+            .OnEvent(AgentOrchestrationEvents.ProcessError)
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+
+        // Process completion
+        userResponseStep
+            .OnEvent(AgentOrchestrationEvents.ProcessCompleted)
+            .StopProcess();
+
+        return processBuilder.Build();
     }
 
     /// <summary>

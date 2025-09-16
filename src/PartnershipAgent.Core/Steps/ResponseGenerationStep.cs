@@ -1,18 +1,24 @@
 using System;
+using System.ComponentModel;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Models;
+
+#pragma warning disable SKEXP0080
 
 namespace PartnershipAgent.Core.Steps;
 
 /// <summary>
 /// Step that handles generating structured responses using the FAQAgent.
 /// </summary>
-public class ResponseGenerationStep : BaseKernelProcessStep
+public class ResponseGenerationStep : KernelProcessStep
 {
     private readonly IFAQAgent _faqAgent;
+    private readonly IBidirectionalToClientChannel _responseChannel;
+    private readonly ILogger<ResponseGenerationStep> _logger;
 
     /// <summary>
     /// Constructor for ResponseGenerationStep.
@@ -23,25 +29,30 @@ public class ResponseGenerationStep : BaseKernelProcessStep
     public ResponseGenerationStep(
         IFAQAgent faqAgent,
         IBidirectionalToClientChannel responseChannel, 
-        ILogger<ResponseGenerationStep> logger) 
-        : base(responseChannel, logger)
+        ILogger<ResponseGenerationStep> logger)
     {
         _faqAgent = faqAgent ?? throw new ArgumentNullException(nameof(faqAgent));
+        _responseChannel = responseChannel ?? throw new ArgumentNullException(nameof(responseChannel));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
     /// Executes response generation and emits appropriate events based on the result.
     /// </summary>
+    /// <param name="context">The KernelProcessStepContext that exposes framework services</param>
+    /// <param name="kernel">SemanticKernel Kernel object</param>
     /// <param name="processModel">The process model containing session and input details</param>
-    /// <returns>Event ID indicating the next step or error condition</returns>
-    public async Task<string> ExecuteAsync(ProcessModel processModel)
+    /// <returns>Task representing the asynchronous operation</returns>
+    [KernelFunction]
+    [Description("Generates structured responses based on relevant documents")]
+    public async Task GenerateResponseAsync(KernelProcessStepContext context, Kernel kernel, ProcessModel processModel)
     {
         try
         {
-            Logger.LogInformation("Starting response generation for session {SessionId}", processModel.SessionId);
+            _logger.LogInformation("Starting response generation for session {SessionId}", processModel.SessionId);
             
             // Send status update to client
-            await ResponseChannel.WriteAsync(AIEventTypes.Status, 
+            await _responseChannel.WriteAsync(AIEventTypes.Status, 
                 JsonSerializer.Serialize(new { message = "Generating comprehensive answer..." }));
 
             // Generate structured response based on found documents
@@ -49,11 +60,11 @@ public class ResponseGenerationStep : BaseKernelProcessStep
             processModel.GeneratedResponse = structuredResponse;
             processModel.FinalResponse = structuredResponse.Answer;
 
-            Logger.LogInformation("Generated response with confidence {Confidence} for session {SessionId}", 
+            _logger.LogInformation("Generated response with confidence {Confidence} for session {SessionId}", 
                 structuredResponse.ConfidenceLevel, processModel.SessionId);
 
             // Send status update with response metadata
-            await ResponseChannel.WriteAsync(AIEventTypes.Status, 
+            await _responseChannel.WriteAsync(AIEventTypes.Status, 
                 JsonSerializer.Serialize(new { 
                     message = "Response generated successfully",
                     confidence = structuredResponse.ConfidenceLevel,
@@ -68,11 +79,16 @@ public class ResponseGenerationStep : BaseKernelProcessStep
                 processModel.ClarificationMessage = structuredResponse.Answer + 
                     " Could you provide more specific details about what aspect of partnership agreements you're interested in?";
                 
-                return AgentOrchestrationEvents.UserClarificationNeeded;
+                await context.EmitEventAsync(new KernelProcessEvent
+                {
+                    Id = AgentOrchestrationEvents.UserClarificationNeeded,
+                    Data = processModel
+                });
+                return;
             }
 
             // Send the structured response data to the client for processing
-            await ResponseChannel.WriteAsync(AIEventTypes.Chat, 
+            await _responseChannel.WriteAsync(AIEventTypes.Chat, 
                 JsonSerializer.Serialize(new { 
                     answer = structuredResponse.Answer,
                     confidence = structuredResponse.ConfidenceLevel,
@@ -82,14 +98,22 @@ public class ResponseGenerationStep : BaseKernelProcessStep
                 }));
 
             // Proceed to final user response step
-            return AgentOrchestrationEvents.ResponseGenerationCompleted;
+            await context.EmitEventAsync(new KernelProcessEvent
+            {
+                Id = AgentOrchestrationEvents.ResponseGenerationCompleted,
+                Data = processModel
+            });
         }
         catch (Exception ex) when (LogError(ex, $"Error generating response for session {processModel.SessionId}"))
         {
             processModel.NeedsClarification = true;
             processModel.ClarificationMessage = "I encountered an error while generating your response. Please try again.";
             
-            return AgentOrchestrationEvents.ProcessError;
+            await context.EmitEventAsync(new KernelProcessEvent
+            {
+                Id = AgentOrchestrationEvents.ProcessError,
+                Data = processModel
+            });
         }
     }
 
@@ -101,7 +125,18 @@ public class ResponseGenerationStep : BaseKernelProcessStep
     /// <returns>Always returns true for use in when clauses</returns>
     private bool LogError(Exception ex, string message)
     {
-        Logger.LogError(ex, "Response generation step error: {ErrorMessage}", message);
+        _logger.LogError(ex, "Response generation step error: {ErrorMessage}", message);
         return true;
+    }
+
+    /// <summary>
+    /// Legacy method for backward compatibility - should not be used with process framework
+    /// </summary>
+    /// <param name="processModel">The process model containing session and input details</param>
+    /// <returns>Event ID indicating the next step or error condition</returns>
+    [Obsolete("Use GenerateResponseAsync with KernelProcessStepContext instead")]
+    public async Task<string> ExecuteAsync(ProcessModel processModel)
+    {
+        throw new NotSupportedException("Use GenerateResponseAsync with KernelProcessStepContext instead");
     }
 }

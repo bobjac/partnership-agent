@@ -1,17 +1,24 @@
 using System;
+using System.ComponentModel;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
 using PartnershipAgent.Core.Models;
+
+#pragma warning disable SKEXP0080
 
 namespace PartnershipAgent.Core.Steps;
 
 /// <summary>
 /// Final step that handles sending the complete response to the user.
 /// </summary>
-public class UserResponseStep : BaseKernelProcessStep
+public class UserResponseStep : KernelProcessStep
 {
+    private readonly IBidirectionalToClientChannel _responseChannel;
+    private readonly ILogger<UserResponseStep> _logger;
+
     /// <summary>
     /// Constructor for UserResponseStep.
     /// </summary>
@@ -19,29 +26,34 @@ public class UserResponseStep : BaseKernelProcessStep
     /// <param name="logger">Logger instance for this step</param>
     public UserResponseStep(
         IBidirectionalToClientChannel responseChannel, 
-        ILogger<UserResponseStep> logger) 
-        : base(responseChannel, logger)
+        ILogger<UserResponseStep> logger)
     {
+        _responseChannel = responseChannel ?? throw new ArgumentNullException(nameof(responseChannel));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
     /// Executes final response assembly and delivery to the user.
     /// </summary>
+    /// <param name="context">The KernelProcessStepContext that exposes framework services</param>
+    /// <param name="kernel">SemanticKernel Kernel object</param>
     /// <param name="processModel">The process model containing all accumulated data</param>
-    /// <returns>Event ID indicating process completion</returns>
-    public async Task<string> ExecuteAsync(ProcessModel processModel)
+    /// <returns>Task representing the asynchronous operation</returns>
+    [KernelFunction]
+    [Description("Sends the final response to the user and completes the process")]
+    public async Task SendUserResponseAsync(KernelProcessStepContext context, Kernel kernel, ProcessModel processModel)
     {
         try
         {
-            Logger.LogInformation("Sending final response for session {SessionId}", processModel.SessionId);
+            _logger.LogInformation("Sending final response for session {SessionId}", processModel.SessionId);
 
             if (processModel.NeedsClarification)
             {
                 // Send clarification message
-                await ResponseChannel.WriteAsync(AIEventTypes.Chat, 
+                await _responseChannel.WriteAsync(AIEventTypes.Chat, 
                     JsonSerializer.Serialize(new TextAgentResponse(processModel.ClarificationMessage)));
                 
-                Logger.LogInformation("Sent clarification request for session {SessionId}", processModel.SessionId);
+                _logger.LogInformation("Sent clarification request for session {SessionId}", processModel.SessionId);
             }
             else if (processModel.GeneratedResponse != null)
             {
@@ -69,9 +81,9 @@ public class UserResponseStep : BaseKernelProcessStep
                     }
                 };
 
-                await ResponseChannel.WriteAsync(AIEventTypes.Chat, JsonSerializer.Serialize(fullResponse));
+                await _responseChannel.WriteAsync(AIEventTypes.Chat, JsonSerializer.Serialize(fullResponse));
                 
-                Logger.LogInformation("Sent complete structured response for session {SessionId}", processModel.SessionId);
+                _logger.LogInformation("Sent complete structured response for session {SessionId}", processModel.SessionId);
             }
             else
             {
@@ -79,13 +91,13 @@ public class UserResponseStep : BaseKernelProcessStep
                 var fallbackResponse = new TextAgentResponse(
                     "I was unable to process your request completely. Please try again with a more specific question about partnership agreements.");
                 
-                await ResponseChannel.WriteAsync(AIEventTypes.Chat, JsonSerializer.Serialize(fallbackResponse));
+                await _responseChannel.WriteAsync(AIEventTypes.Chat, JsonSerializer.Serialize(fallbackResponse));
                 
-                Logger.LogWarning("Sent fallback response for session {SessionId}", processModel.SessionId);
+                _logger.LogWarning("Sent fallback response for session {SessionId}", processModel.SessionId);
             }
 
             // Send completion event
-            await ResponseChannel.WriteAsync(AIEventTypes.Completion, 
+            await _responseChannel.WriteAsync(AIEventTypes.Completion, 
                 JsonSerializer.Serialize(new { 
                     sessionId = processModel.SessionId, 
                     timestamp = DateTime.UtcNow,
@@ -93,18 +105,26 @@ public class UserResponseStep : BaseKernelProcessStep
                     totalStepsCompleted = GetCompletedStepsCount(processModel)
                 }));
 
-            return AgentOrchestrationEvents.ProcessCompleted;
+            await context.EmitEventAsync(new KernelProcessEvent
+            {
+                Id = AgentOrchestrationEvents.ProcessCompleted,
+                Data = processModel
+            });
         }
         catch (Exception ex) when (LogError(ex, $"Error sending response for session {processModel.SessionId}"))
         {
             // Send error response as last resort
-            await ResponseChannel.WriteAsync(AIEventTypes.Error, 
+            await _responseChannel.WriteAsync(AIEventTypes.Error, 
                 JsonSerializer.Serialize(new { 
                     message = "An error occurred while preparing your response. Please try again.",
                     sessionId = processModel.SessionId 
                 }));
 
-            return AgentOrchestrationEvents.ProcessError;
+            await context.EmitEventAsync(new KernelProcessEvent
+            {
+                Id = AgentOrchestrationEvents.ProcessError,
+                Data = processModel
+            });
         }
     }
 
@@ -133,7 +153,18 @@ public class UserResponseStep : BaseKernelProcessStep
     /// <returns>Always returns true for use in when clauses</returns>
     private bool LogError(Exception ex, string message)
     {
-        Logger.LogError(ex, "User response step error: {ErrorMessage}", message);
+        _logger.LogError(ex, "User response step error: {ErrorMessage}", message);
         return true;
+    }
+
+    /// <summary>
+    /// Legacy method for backward compatibility - should not be used with process framework
+    /// </summary>
+    /// <param name="processModel">The process model containing all accumulated data</param>
+    /// <returns>Event ID indicating process completion</returns>
+    [Obsolete("Use SendUserResponseAsync with KernelProcessStepContext instead")]
+    public async Task<string> ExecuteAsync(ProcessModel processModel)
+    {
+        throw new NotSupportedException("Use SendUserResponseAsync with KernelProcessStepContext instead");
     }
 }

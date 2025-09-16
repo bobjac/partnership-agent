@@ -79,16 +79,24 @@ fi
 # Step 3: Create index and add documents
 echo -e "\n${YELLOW}Step 3: Setting up Elasticsearch index and documents...${NC}"
 
+# Check if index exists and delete if it does
+echo -e "${BLUE}Checking for existing partnership-documents index...${NC}"
+if curl -s -o /dev/null -w "%{http_code}" "http://localhost:9200/partnership-documents" | grep -q "200"; then
+    echo -e "${BLUE}Index exists, deleting and recreating...${NC}"
+    curl -s -X DELETE "localhost:9200/partnership-documents" > /dev/null
+fi
+
 # Create the index with mapping
 echo -e "${BLUE}Creating partnership-documents index...${NC}"
-curl -s -X PUT "localhost:9200/partnership-documents" \
+response=$(curl -s -X PUT "localhost:9200/partnership-documents" \
   -H "Content-Type: application/json" \
-  -d @"$SCRIPT_DIR/setup-elasticsearch.json" > /dev/null
+  -d @"$SCRIPT_DIR/setup-elasticsearch.json")
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Index created successfully${NC}"
 else
     echo -e "${RED}Error: Failed to create index${NC}"
+    echo -e "${RED}Response: $response${NC}"
     exit 1
 fi
 

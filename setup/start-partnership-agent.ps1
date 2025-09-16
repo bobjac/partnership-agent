@@ -140,6 +140,19 @@ if (!(Wait-ForService -Url "http://localhost:9200/_cluster/health" -ServiceName 
 # Step 3: Create index and add documents
 Write-Host "`nStep 3: Setting up Elasticsearch index and documents..." -ForegroundColor Yellow
 
+# Check if index exists and delete if it does
+Write-Host "Checking for existing partnership-documents index..." -ForegroundColor Cyan
+try {
+    $indexCheck = Invoke-RestMethod -Uri "http://localhost:9200/partnership-documents" -Method Get -Headers $elasticHeaders -ErrorAction SilentlyContinue
+    if ($indexCheck) {
+        Write-Host "Index exists, deleting and recreating..." -ForegroundColor Cyan
+        Invoke-RestMethod -Uri "http://localhost:9200/partnership-documents" -Method Delete -Headers $elasticHeaders
+    }
+}
+catch {
+    # Index doesn't exist, which is fine
+}
+
 # Create the index with mapping
 Write-Host "Creating partnership-documents index..." -ForegroundColor Cyan
 $indexMapping = Get-Content "$ScriptDir\setup-elasticsearch.json" -Raw
@@ -149,6 +162,7 @@ try {
 }
 catch {
     Write-Host "Error: Failed to create index - $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Response: $($_.Exception.Response)" -ForegroundColor Red
     exit 1
 }
 

@@ -44,18 +44,18 @@ public class CrossPlatformSetup
 
             // Step 2: Check for existing Elasticsearch and extract credentials
             bool elasticRunning = await DetectElasticsearch();
-            
+
             if (!elasticRunning)
             {
                 // Step 3: Clean up existing containers
                 await CleanupContainers();
 
+                // Set default credentials for new instance
+                ElasticCredentials.Password = "elastic123";
+
                 // Step 4: Start Elasticsearch
                 if (!await StartElasticsearch())
                     return 1;
-                
-                // Set default credentials for new instance
-                ElasticCredentials.Password = "elastic123";
             }
 
             // Step 5: Setup index and documents
@@ -164,19 +164,19 @@ public class CrossPlatformSetup
 
             // Try to extract password from environment variables
             var envOutput = await GetCommandOutput("docker", $"exec {containerName} printenv");
-            
+
             foreach (var line in envOutput.Split('\n'))
             {
                 if (line.StartsWith("ELASTIC_PASSWORD="))
                 {
                     ElasticCredentials.Password = line.Substring("ELASTIC_PASSWORD=".Length);
                     ElasticCredentials.Username = "elastic";
-                    
+
                     // Test the credentials
                     var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ElasticCredentials.Username}:{ElasticCredentials.Password}"));
                     using var client = new HttpClient();
                     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
-                    
+
                     var response = await client.GetAsync("http://localhost:9200/_cluster/health");
                     if (response.IsSuccessStatusCode)
                     {

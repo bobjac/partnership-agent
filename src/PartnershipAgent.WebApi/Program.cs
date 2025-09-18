@@ -80,6 +80,9 @@ builder.Services.AddScoped<ICitationService, CitationService>();
 // Register the response channel
 builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalChannel>();
 
+// Register the process response collector
+builder.Services.AddSingleton<ProcessResponseCollector>();
+
 // Register the individual step classes
 builder.Services.AddScoped<EntityResolutionStep>();
 builder.Services.AddScoped<DocumentSearchStep>();

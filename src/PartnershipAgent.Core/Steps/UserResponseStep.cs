@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using PartnershipAgent.Core.Models;
+using PartnershipAgent.Core.Services;
 
 #pragma warning disable SKEXP0080
 
@@ -17,18 +18,22 @@ namespace PartnershipAgent.Core.Steps;
 public class UserResponseStep : KernelProcessStep
 {
     private readonly IBidirectionalToClientChannel _responseChannel;
+    private readonly ProcessResponseCollector _responseCollector;
     private readonly ILogger<UserResponseStep> _logger;
 
     /// <summary>
     /// Constructor for UserResponseStep.
     /// </summary>
     /// <param name="responseChannel">Channel for sending responses to the client</param>
+    /// <param name="responseCollector">Collector for storing final responses</param>
     /// <param name="logger">Logger instance for this step</param>
     public UserResponseStep(
-        IBidirectionalToClientChannel responseChannel, 
+        IBidirectionalToClientChannel responseChannel,
+        ProcessResponseCollector responseCollector,
         ILogger<UserResponseStep> logger)
     {
         _responseChannel = responseChannel ?? throw new ArgumentNullException(nameof(responseChannel));
+        _responseCollector = responseCollector ?? throw new ArgumentNullException(nameof(responseCollector));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -52,6 +57,15 @@ public class UserResponseStep : KernelProcessStep
                 // Send clarification message
                 await _responseChannel.WriteAsync(AIEventTypes.Chat, 
                     JsonSerializer.Serialize(new TextAgentResponse(processModel.ClarificationMessage)));
+                
+                // Store the clarification response
+                var chatResponse = new ChatResponse
+                {
+                    Response = processModel.ClarificationMessage,
+                    ExtractedEntities = processModel.ExtractedEntities.ConvertAll(e => e.Text),
+                    RelevantDocuments = processModel.RelevantDocuments
+                };
+                _responseCollector.SetResponse(processModel.SessionId, chatResponse);
                 
                 _logger.LogInformation("Sent clarification request for session {SessionId}", processModel.SessionId);
             }
@@ -83,6 +97,15 @@ public class UserResponseStep : KernelProcessStep
 
                 await _responseChannel.WriteAsync(AIEventTypes.Chat, JsonSerializer.Serialize(fullResponse));
                 
+                // Store the final response for the StepOrchestrationService to retrieve
+                var chatResponse = new ChatResponse
+                {
+                    Response = processModel.GeneratedResponse.Answer,
+                    ExtractedEntities = processModel.ExtractedEntities.ConvertAll(e => e.Text),
+                    RelevantDocuments = processModel.RelevantDocuments
+                };
+                _responseCollector.SetResponse(processModel.SessionId, chatResponse);
+                
                 _logger.LogInformation("Sent complete structured response for session {SessionId}", processModel.SessionId);
             }
             else
@@ -92,6 +115,15 @@ public class UserResponseStep : KernelProcessStep
                     "I was unable to process your request completely. Please try again with a more specific question about partnership agreements.");
                 
                 await _responseChannel.WriteAsync(AIEventTypes.Chat, JsonSerializer.Serialize(fallbackResponse));
+                
+                // Store the fallback response
+                var chatResponse = new ChatResponse
+                {
+                    Response = fallbackResponse.Content,
+                    ExtractedEntities = processModel.ExtractedEntities.ConvertAll(e => e.Text),
+                    RelevantDocuments = processModel.RelevantDocuments
+                };
+                _responseCollector.SetResponse(processModel.SessionId, chatResponse);
                 
                 _logger.LogWarning("Sent fallback response for session {SessionId}", processModel.SessionId);
             }

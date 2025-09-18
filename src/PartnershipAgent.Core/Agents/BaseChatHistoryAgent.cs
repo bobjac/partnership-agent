@@ -10,7 +10,7 @@ namespace PartnershipAgent.Core.Agents;
 public abstract class BaseChatHistoryAgent
 {
     protected readonly ILogger Logger;
-    protected readonly Guid SessionId;
+    protected readonly Guid ThreadId;
     protected readonly IRequestedBy RequestedBy;
 
     /// <summary>
@@ -32,12 +32,12 @@ public abstract class BaseChatHistoryAgent
     /// Initializes a new instance of the BaseChatHistoryAgent class.
     /// </summary>
     /// <param name="requestedBy">The user context for the agent session</param>
-    /// <param name="sessionId">Unique identifier for the chat session</param>
+    /// <param name="threadId">Unique identifier for the chat session</param>
     /// <param name="logger">Logger instance for the agent</param>
-    protected BaseChatHistoryAgent(IRequestedBy requestedBy, Guid sessionId, ILogger logger)
+    protected BaseChatHistoryAgent(IRequestedBy requestedBy, Guid threadId, ILogger logger)
     {
         RequestedBy = requestedBy ?? throw new ArgumentNullException(nameof(requestedBy));
-        SessionId = sessionId;
+        ThreadId = threadId;
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 

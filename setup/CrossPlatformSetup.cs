@@ -153,13 +153,28 @@ public class CrossPlatformSetup
     {
         try
         {
-            // Get running Elasticsearch containers
-            var output = await GetCommandOutput("docker", "ps --filter \"ancestor=docker.elastic.co/elasticsearch/elasticsearch\" --format \"{{.Names}}\"");
+            // Get running Elasticsearch containers - check for common container names first
+            var containerNames = new[] { "elasticsearch-secure", "elasticsearch", "es-local-dev" };
+            string? containerName = null;
             
-            if (string.IsNullOrWhiteSpace(output))
-                return false;
-
-            var containerName = output.Trim().Split('\n')[0];
+            foreach (var name in containerNames)
+            {
+                var checkOutput = await GetCommandOutput("docker", $"ps --filter \"name={name}\" --format \"{{{{.Names}}}}\"");
+                if (!string.IsNullOrWhiteSpace(checkOutput))
+                {
+                    containerName = checkOutput.Trim().Split('\n')[0];
+                    break;
+                }
+            }
+            
+            // If no named containers found, check by image
+            if (containerName == null)
+            {
+                var output = await GetCommandOutput("docker", "ps --filter \"ancestor=docker.elastic.co/elasticsearch/elasticsearch\" --format \"{{.Names}}\"");
+                if (string.IsNullOrWhiteSpace(output))
+                    return false;
+                containerName = output.Trim().Split('\n')[0];
+            }
             Console.WriteLine($"Found Elasticsearch container: {containerName}");
 
             // Try to extract password from environment variables

@@ -49,11 +49,11 @@ public class StepOrchestrationService
         var parent = Activity.Current;
         Activity.Current = null; // Set Activity.Current to null to force StartActivity to create a new root activity
 
-        using var activity = _activitySource.StartActivity($"SessionId: {request.ThreadId}", ActivityKind.Internal, parentId: default);
+        using var activity = _activitySource.StartActivity($"ThreadId: {request.ThreadId}", ActivityKind.Internal, parentId: default);
         
         var processModel = new ProcessModel
         {
-            SessionId = Guid.Parse(request.ThreadId),
+            ThreadId = Guid.Parse(request.ThreadId),
             Input = request.Prompt,
             InitialPrompt = request.Prompt,
             UserId = request.UserId,
@@ -66,10 +66,10 @@ public class StepOrchestrationService
             activity?.SetTag("request.user_id", request.UserId);
             activity?.SetTag("request.tenant_id", request.TenantId);
 
-            _logger.LogInformation("Starting step orchestration for session {SessionId}", processModel.SessionId);
+            _logger.LogInformation("Starting step orchestration for session {ThreadId}", processModel.ThreadId);
 
             // Build and execute the process using Semantic Kernel's native process framework
-            var process = BuildProcess(processModel.SessionId);
+            var process = BuildProcess(processModel.ThreadId);
             
             // Create a kernel builder and register the services (following working pattern)
             var kernelBuilder = Kernel.CreateBuilder();
@@ -96,19 +96,19 @@ public class StepOrchestrationService
                     Data = processModel
                 });
 
-            _logger.LogInformation("Step orchestration completed for session {SessionId}", processModel.SessionId);
+            _logger.LogInformation("Step orchestration completed for session {ThreadId}", processModel.ThreadId);
 
             activity?.SetTag("orchestration.final_event", AgentOrchestrationEvents.ProcessCompleted);
 
             // Get the final response from the collector
             var responseCollector = _serviceProvider.GetRequiredService<ProcessResponseCollector>();
-            var finalResponse = responseCollector.GetAndRemoveResponse(processModel.SessionId);
+            var finalResponse = responseCollector.GetAndRemoveResponse(processModel.ThreadId);
             
             return finalResponse ?? CreateChatResponse(request, processModel);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in step orchestration for session {SessionId}", processModel.SessionId);
+            _logger.LogError(ex, "Error in step orchestration for session {ThreadId}", processModel.ThreadId);
             return CreateErrorResponse(request);
         }
     }
@@ -116,9 +116,9 @@ public class StepOrchestrationService
     /// <summary>
     /// Builds the process using Semantic Kernel's native ProcessBuilder.
     /// </summary>
-    /// <param name="sessionId">The session ID for the process</param>
+    /// <param name="ThreadId">The session ID for the process</param>
     /// <returns>The built kernel process</returns>
-    private KernelProcess BuildProcess(Guid sessionId)
+    private KernelProcess BuildProcess(Guid ThreadId)
     {
         ProcessBuilder processBuilder = new("PartnershipAgent");
         

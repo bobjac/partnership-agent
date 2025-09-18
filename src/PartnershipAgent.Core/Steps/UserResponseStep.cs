@@ -50,7 +50,7 @@ public class UserResponseStep : KernelProcessStep
     {
         try
         {
-            _logger.LogInformation("Sending final response for session {SessionId}", processModel.SessionId);
+            _logger.LogInformation("Sending final response for session {ThreadId}", processModel.ThreadId);
 
             if (processModel.NeedsClarification)
             {
@@ -65,9 +65,9 @@ public class UserResponseStep : KernelProcessStep
                     ExtractedEntities = processModel.ExtractedEntities.ConvertAll(e => e.Text),
                     RelevantDocuments = processModel.RelevantDocuments
                 };
-                _responseCollector.SetResponse(processModel.SessionId, chatResponse);
+                _responseCollector.SetResponse(processModel.ThreadId, chatResponse);
                 
-                _logger.LogInformation("Sent clarification request for session {SessionId}", processModel.SessionId);
+                _logger.LogInformation("Sent clarification request for session {ThreadId}", processModel.ThreadId);
             }
             else if (processModel.GeneratedResponse != null)
             {
@@ -88,7 +88,7 @@ public class UserResponseStep : KernelProcessStep
                     }).ToList(),
                     metadata = new
                     {
-                        sessionId = processModel.SessionId,
+                        ThreadId = processModel.ThreadId,
                         processedAt = DateTime.UtcNow,
                         documentsFound = processModel.RelevantDocuments.Count,
                         entitiesExtracted = processModel.ExtractedEntities.Count
@@ -104,9 +104,9 @@ public class UserResponseStep : KernelProcessStep
                     ExtractedEntities = processModel.ExtractedEntities.ConvertAll(e => e.Text),
                     RelevantDocuments = processModel.RelevantDocuments
                 };
-                _responseCollector.SetResponse(processModel.SessionId, chatResponse);
+                _responseCollector.SetResponse(processModel.ThreadId, chatResponse);
                 
-                _logger.LogInformation("Sent complete structured response for session {SessionId}", processModel.SessionId);
+                _logger.LogInformation("Sent complete structured response for session {ThreadId}", processModel.ThreadId);
             }
             else
             {
@@ -123,15 +123,15 @@ public class UserResponseStep : KernelProcessStep
                     ExtractedEntities = processModel.ExtractedEntities.ConvertAll(e => e.Text),
                     RelevantDocuments = processModel.RelevantDocuments
                 };
-                _responseCollector.SetResponse(processModel.SessionId, chatResponse);
+                _responseCollector.SetResponse(processModel.ThreadId, chatResponse);
                 
-                _logger.LogWarning("Sent fallback response for session {SessionId}", processModel.SessionId);
+                _logger.LogWarning("Sent fallback response for session {ThreadId}", processModel.ThreadId);
             }
 
             // Send completion event
             await _responseChannel.WriteAsync(AIEventTypes.Completion, 
                 JsonSerializer.Serialize(new { 
-                    sessionId = processModel.SessionId, 
+                    ThreadId = processModel.ThreadId, 
                     timestamp = DateTime.UtcNow,
                     success = !processModel.NeedsClarification,
                     totalStepsCompleted = GetCompletedStepsCount(processModel)
@@ -143,13 +143,13 @@ public class UserResponseStep : KernelProcessStep
                 Data = processModel
             });
         }
-        catch (Exception ex) when (LogError(ex, $"Error sending response for session {processModel.SessionId}"))
+        catch (Exception ex) when (LogError(ex, $"Error sending response for session {processModel.ThreadId}"))
         {
             // Send error response as last resort
             await _responseChannel.WriteAsync(AIEventTypes.Error, 
                 JsonSerializer.Serialize(new { 
                     message = "An error occurred while preparing your response. Please try again.",
-                    sessionId = processModel.SessionId 
+                    ThreadId = processModel.ThreadId 
                 }));
 
             await context.EmitEventAsync(new KernelProcessEvent

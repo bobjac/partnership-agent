@@ -46,11 +46,11 @@ public class SimplePartnershipAgentService
         var parent = Activity.Current;
         Activity.Current = null; // Set Activity.Current to null to force StartActivity to create a new root activity
 
-        using var activity = _activitySource.StartActivity($"SessionId: {request.ThreadId}", ActivityKind.Internal, parentId: default);
+        using var activity = _activitySource.StartActivity($"ThreadId: {request.ThreadId}", ActivityKind.Internal, parentId: default);
         
         var processModel = new ProcessModel
         {
-            SessionId = Guid.Parse(request.ThreadId),
+            ThreadId = Guid.Parse(request.ThreadId),
             Input = request.Prompt,
             InitialPrompt = request.Prompt,
             UserId = request.UserId,
@@ -101,7 +101,7 @@ public class SimplePartnershipAgentService
     private async Task<(bool needsClarification, string message)> ExecuteEntityResolutionStep(
         ProcessModel processModel, IBidirectionalToClientChannel responseChannel)
     {
-        _logger.LogInformation("Starting entity extraction for session {SessionId}", processModel.SessionId);
+        _logger.LogInformation("Starting entity extraction for session {ThreadId}", processModel.ThreadId);
         
         try
         {
@@ -111,8 +111,8 @@ public class SimplePartnershipAgentService
             var entities = await _entityAgent.ExtractEntitiesAsync(processModel.Input);
             processModel.ExtractedEntities = entities.ToList();
 
-            _logger.LogInformation("Extracted {EntityCount} entities for session {SessionId}", 
-                entities.Count(), processModel.SessionId);
+            _logger.LogInformation("Extracted {EntityCount} entities for session {ThreadId}", 
+                entities.Count(), processModel.ThreadId);
 
             await responseChannel.WriteAsync(AIEventTypes.Status, 
                 JsonSerializer.Serialize(new { 
@@ -124,7 +124,7 @@ public class SimplePartnershipAgentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error extracting entities for session {SessionId}", processModel.SessionId);
+            _logger.LogError(ex, "Error extracting entities for session {ThreadId}", processModel.ThreadId);
             return (true, "I encountered an error while analyzing your request. Please try rephrasing your question.");
         }
     }
@@ -135,7 +135,7 @@ public class SimplePartnershipAgentService
     private async Task<(bool needsClarification, string message)> ExecuteFAQAgentStep(
         ProcessModel processModel, IBidirectionalToClientChannel responseChannel)
     {
-        _logger.LogInformation("Starting FAQ processing for session {SessionId}", processModel.SessionId);
+        _logger.LogInformation("Starting FAQ processing for session {ThreadId}", processModel.ThreadId);
         
         try
         {
@@ -146,8 +146,8 @@ public class SimplePartnershipAgentService
             var documents = await _faqAgent.SearchDocumentsAsync(processModel.Input, processModel.TenantId, allowedCategories);
             processModel.RelevantDocuments = documents;
 
-            _logger.LogInformation("Found {DocumentCount} relevant documents for session {SessionId}", 
-                documents.Count, processModel.SessionId);
+            _logger.LogInformation("Found {DocumentCount} relevant documents for session {ThreadId}", 
+                documents.Count, processModel.ThreadId);
 
             if (!documents.Any())
             {
@@ -161,8 +161,8 @@ public class SimplePartnershipAgentService
             processModel.GeneratedResponse = structuredResponse;
             processModel.FinalResponse = structuredResponse.Answer;
 
-            _logger.LogInformation("Generated response with confidence {Confidence} for session {SessionId}", 
-                structuredResponse.ConfidenceLevel, processModel.SessionId);
+            _logger.LogInformation("Generated response with confidence {Confidence} for session {ThreadId}", 
+                structuredResponse.ConfidenceLevel, processModel.ThreadId);
 
             // Check if the response needs clarification based on confidence level
             if (structuredResponse.ConfidenceLevel == "low" && !structuredResponse.HasCompleteAnswer)
@@ -175,7 +175,7 @@ public class SimplePartnershipAgentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in FAQ processing for session {SessionId}", processModel.SessionId);
+            _logger.LogError(ex, "Error in FAQ processing for session {ThreadId}", processModel.ThreadId);
             return (true, "I encountered an error while processing your question. Please try again.");
         }
     }
@@ -186,10 +186,10 @@ public class SimplePartnershipAgentService
     private async Task<ChatResponse> GenerateFinalResponse(
         ChatRequest request, ProcessModel processModel, IBidirectionalToClientChannel responseChannel)
     {
-        _logger.LogInformation("Generating final response for session {SessionId}", processModel.SessionId);
+        _logger.LogInformation("Generating final response for session {ThreadId}", processModel.ThreadId);
 
         await responseChannel.WriteAsync(AIEventTypes.Completion, 
-            JsonSerializer.Serialize(new { sessionId = processModel.SessionId, timestamp = DateTime.UtcNow }));
+            JsonSerializer.Serialize(new { ThreadId = processModel.ThreadId, timestamp = DateTime.UtcNow }));
 
         return new ChatResponse
         {

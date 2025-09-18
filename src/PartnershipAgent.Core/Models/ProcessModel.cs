@@ -11,7 +11,7 @@ public class ProcessModel
     /// <summary>
     /// Unique identifier for the processing session.
     /// </summary>
-    public Guid SessionId { get; set; }
+    public Guid ThreadId { get; set; }
 
     /// <summary>
     /// The current user input being processed.

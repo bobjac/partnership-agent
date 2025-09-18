@@ -37,13 +37,13 @@ public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
     /// Initializes the agent with required dependencies and configures the semantic kernel.
     /// </summary>
     public FAQAgent(
-        Guid sessionId,
+        Guid threadId,
         IKernelBuilder kernelBuilder,
         IElasticSearchService elasticSearchService,
         ICitationService citationService,
         IRequestedBy requestedBy,
         ILogger<FAQAgent> logger
-    ) : base(requestedBy, sessionId, logger)
+    ) : base(requestedBy, threadId, logger)
     {
         _kernelBuilder = kernelBuilder ?? throw new ArgumentNullException(nameof(kernelBuilder));
         _elasticSearchService = elasticSearchService ?? throw new ArgumentNullException(nameof(elasticSearchService));
@@ -115,7 +115,7 @@ public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
             Logger.LogInformation("Found {Count} relevant documents", documents.Count);
             return documents;
         }
-        catch (Exception ex) when (Log(ex, $"Error searching documents for session {SessionId} with query {query}"))
+        catch (Exception ex) when (Log(ex, $"Error searching documents for session {ThreadId} with query {query}"))
         {
             return [];
         }
@@ -141,7 +141,7 @@ public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
         [Description("The user's original question")] string query,
         [Description("List of relevant documents to base the answer on")] List<DocumentResult> documents)
     {
-        Logger.LogInformation("Generating structured response based on {Count} documents for session {SessionId}", documents.Count, SessionId);
+        Logger.LogInformation("Generating structured response based on {Count} documents for conversation thread {ThreadId}", documents.Count, ThreadId);
 
         try
         {
@@ -182,7 +182,7 @@ public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
                 response.ConfidenceLevel, citations.Count);
             return response;
         }
-        catch (Exception ex) when (Log(ex, $"Error generating answer for session {SessionId} with query {query}"))
+        catch (Exception ex) when (Log(ex, $"Error generating answer for session {ThreadId} with query {query}"))
         {
             return new FAQAgentResponse
             {

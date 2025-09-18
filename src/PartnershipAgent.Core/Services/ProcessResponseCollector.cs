@@ -14,21 +14,21 @@ public class ProcessResponseCollector
     /// <summary>
     /// Stores a final response for a session
     /// </summary>
-    /// <param name="sessionId">The session ID</param>
+    /// <param name="threadId">The session ID</param>
     /// <param name="response">The final chat response</param>
-    public void SetResponse(Guid sessionId, ChatResponse response)
+    public void SetResponse(Guid threadId, ChatResponse response)
     {
-        _responses.TryAdd(sessionId, response);
+        _responses.TryAdd(threadId, response);
     }
 
     /// <summary>
     /// Gets and removes the final response for a session
     /// </summary>
-    /// <param name="sessionId">The session ID</param>
+    /// <param name="threadId">The session ID</param>
     /// <returns>The final chat response, or null if not found</returns>
-    public ChatResponse? GetAndRemoveResponse(Guid sessionId)
+    public ChatResponse? GetAndRemoveResponse(Guid threadId)
     {
-        _responses.TryRemove(sessionId, out var response);
+        _responses.TryRemove(threadId, out var response);
         return response;
     }
 }

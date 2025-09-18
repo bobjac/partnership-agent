@@ -70,9 +70,9 @@ builder.Services.AddScoped<IFAQAgent>(provider =>
     
     // Create a simple IRequestedBy implementation for this context
     var requestedBy = new SimpleRequestedBy();
-    var sessionId = Guid.NewGuid();
+    var ThreadId = Guid.NewGuid();
     
-    return new FAQAgent(sessionId, kernelBuilder, elasticSearchService, citationService, requestedBy, logger);
+    return new FAQAgent(ThreadId, kernelBuilder, elasticSearchService, citationService, requestedBy, logger);
 });
 builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
 builder.Services.AddScoped<ICitationService, CitationService>();

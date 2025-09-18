@@ -49,7 +49,7 @@ public class ResponseGenerationStep : KernelProcessStep
     {
         try
         {
-            _logger.LogInformation("Starting response generation for session {SessionId}", processModel.SessionId);
+            _logger.LogInformation("Starting response generation for session {ThreadId}", processModel.ThreadId);
             
             // Send status update to client
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
@@ -60,8 +60,8 @@ public class ResponseGenerationStep : KernelProcessStep
             processModel.GeneratedResponse = structuredResponse;
             processModel.FinalResponse = structuredResponse.Answer;
 
-            _logger.LogInformation("Generated response with confidence {Confidence} for session {SessionId}", 
-                structuredResponse.ConfidenceLevel, processModel.SessionId);
+            _logger.LogInformation("Generated response with confidence {Confidence} for session {ThreadId}", 
+                structuredResponse.ConfidenceLevel, processModel.ThreadId);
 
             // Send status update with response metadata
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
@@ -104,7 +104,7 @@ public class ResponseGenerationStep : KernelProcessStep
                 Data = processModel
             });
         }
-        catch (Exception ex) when (LogError(ex, $"Error generating response for session {processModel.SessionId}"))
+        catch (Exception ex) when (LogError(ex, $"Error generating response for session {processModel.ThreadId}"))
         {
             processModel.NeedsClarification = true;
             processModel.ClarificationMessage = "I encountered an error while generating your response. Please try again.";

@@ -50,12 +50,13 @@ public class CrossPlatformSetup
                 // Step 3: Clean up existing containers
                 await CleanupContainers();
 
+                // Set default credentials for new instance
+                ElasticCredentials.Password = "elastic123";
+
                 // Step 4: Start Elasticsearch
                 if (!await StartElasticsearch())
                     return 1;
-                
-                // Set default credentials for new instance
-                ElasticCredentials.Password = "elastic123";
+
             }
 
             // Step 5: Setup index and documents

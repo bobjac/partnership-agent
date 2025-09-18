@@ -50,7 +50,7 @@ public class EntityResolutionStep : KernelProcessStep
     {
         try
         {
-            _logger.LogInformation("Starting entity extraction for session {SessionId}", processModel.SessionId);
+            _logger.LogInformation("Starting entity extraction for session {ThreadId}", processModel.ThreadId);
             
             // Send status update to client
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
@@ -60,8 +60,8 @@ public class EntityResolutionStep : KernelProcessStep
             var entities = await _entityResolutionAgent.ExtractEntitiesAsync(processModel.Input);
             processModel.ExtractedEntities = entities.ToList();
 
-            _logger.LogInformation("Extracted {EntityCount} entities for session {SessionId}", 
-                entities.Count(), processModel.SessionId);
+            _logger.LogInformation("Extracted {EntityCount} entities for session {ThreadId}", 
+                entities.Count(), processModel.ThreadId);
 
             // Send status update with extracted entities
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
@@ -77,7 +77,7 @@ public class EntityResolutionStep : KernelProcessStep
                 Data = processModel
             });
         }
-        catch (Exception ex) when (LogError(ex, $"Error extracting entities for session {processModel.SessionId}"))
+        catch (Exception ex) when (LogError(ex, $"Error extracting entities for session {processModel.ThreadId}"))
         {
             processModel.NeedsClarification = true;
             processModel.ClarificationMessage = "I encountered an error while analyzing your request. Please try rephrasing your question.";

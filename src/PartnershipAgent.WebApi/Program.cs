@@ -70,15 +70,18 @@ builder.Services.AddScoped<IFAQAgent>(provider =>
     
     // Create a simple IRequestedBy implementation for this context
     var requestedBy = new SimpleRequestedBy();
-    var sessionId = Guid.NewGuid();
+    var ThreadId = Guid.NewGuid();
     
-    return new FAQAgent(sessionId, kernelBuilder, elasticSearchService, citationService, requestedBy, logger);
+    return new FAQAgent(ThreadId, kernelBuilder, elasticSearchService, citationService, requestedBy, logger);
 });
 builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
 builder.Services.AddScoped<ICitationService, CitationService>();
 
 // Register the response channel
 builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalChannel>();
+
+// Register the process response collector
+builder.Services.AddSingleton<ProcessResponseCollector>();
 
 // Register the individual step classes
 builder.Services.AddScoped<EntityResolutionStep>();

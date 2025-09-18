@@ -5,7 +5,9 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Process;
+using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Models;
 using PartnershipAgent.Core.Steps;
 
@@ -21,6 +23,7 @@ public class StepOrchestrationService
 {
     private static readonly ActivitySource _activitySource = new("PartnershipAgent.StepOrchestration");
     private readonly Kernel _kernel;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<StepOrchestrationService> _logger;
 
     /// <summary>
@@ -28,9 +31,11 @@ public class StepOrchestrationService
     /// </summary>
     public StepOrchestrationService(
         Kernel kernel,
+        IServiceProvider serviceProvider,
         ILogger<StepOrchestrationService> logger)
     {
         _kernel = kernel ?? throw new ArgumentNullException(nameof(kernel));
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -44,11 +49,11 @@ public class StepOrchestrationService
         var parent = Activity.Current;
         Activity.Current = null; // Set Activity.Current to null to force StartActivity to create a new root activity
 
-        using var activity = _activitySource.StartActivity($"SessionId: {request.ThreadId}", ActivityKind.Internal, parentId: default);
+        using var activity = _activitySource.StartActivity($"ThreadId: {request.ThreadId}", ActivityKind.Internal, parentId: default);
         
         var processModel = new ProcessModel
         {
-            SessionId = Guid.Parse(request.ThreadId),
+            ThreadId = Guid.Parse(request.ThreadId),
             Input = request.Prompt,
             InitialPrompt = request.Prompt,
             UserId = request.UserId,
@@ -61,28 +66,49 @@ public class StepOrchestrationService
             activity?.SetTag("request.user_id", request.UserId);
             activity?.SetTag("request.tenant_id", request.TenantId);
 
-            _logger.LogInformation("Starting step orchestration for session {SessionId}", processModel.SessionId);
+            _logger.LogInformation("Starting step orchestration for session {ThreadId}", processModel.ThreadId);
 
             // Build and execute the process using Semantic Kernel's native process framework
-            var process = BuildProcess(processModel.SessionId);
+            var process = BuildProcess(processModel.ThreadId);
+            
+            // Create a kernel builder and register the services (following working pattern)
+            var kernelBuilder = Kernel.CreateBuilder();
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IEntityResolutionAgent>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IFAQAgent>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IBidirectionalToClientChannel>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ProcessResponseCollector>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<EntityResolutionStep>>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<DocumentSearchStep>>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<ResponseGenerationStep>>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<UserResponseStep>>());
+            
+            // Copy the chat completion service from the original kernel
+            var chatCompletion = _kernel.GetRequiredService<IChatCompletionService>();
+            kernelBuilder.Services.AddSingleton(chatCompletion);
+            
+            var processKernel = kernelBuilder.Build();
             
             await using LocalKernelProcessContext localProcess = await process.StartAsync(
-                _kernel,
+                processKernel,
                 new KernelProcessEvent()
                 {
                     Id = AgentOrchestrationEvents.StartProcess,
                     Data = processModel
                 });
 
-            _logger.LogInformation("Step orchestration completed for session {SessionId}", processModel.SessionId);
+            _logger.LogInformation("Step orchestration completed for session {ThreadId}", processModel.ThreadId);
 
             activity?.SetTag("orchestration.final_event", AgentOrchestrationEvents.ProcessCompleted);
 
-            return CreateChatResponse(request, processModel);
+            // Get the final response from the collector
+            var responseCollector = _serviceProvider.GetRequiredService<ProcessResponseCollector>();
+            var finalResponse = responseCollector.GetAndRemoveResponse(processModel.ThreadId);
+            
+            return finalResponse ?? CreateChatResponse(request, processModel);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in step orchestration for session {SessionId}", processModel.SessionId);
+            _logger.LogError(ex, "Error in step orchestration for session {ThreadId}", processModel.ThreadId);
             return CreateErrorResponse(request);
         }
     }
@@ -90,9 +116,9 @@ public class StepOrchestrationService
     /// <summary>
     /// Builds the process using Semantic Kernel's native ProcessBuilder.
     /// </summary>
-    /// <param name="sessionId">The session ID for the process</param>
+    /// <param name="ThreadId">The session ID for the process</param>
     /// <returns>The built kernel process</returns>
-    private KernelProcess BuildProcess(Guid sessionId)
+    private KernelProcess BuildProcess(Guid ThreadId)
     {
         ProcessBuilder processBuilder = new("PartnershipAgent");
         
@@ -102,43 +128,43 @@ public class StepOrchestrationService
         var responseGenerationStep = processBuilder.AddStepFromType<ResponseGenerationStep>();
         var userResponseStep = processBuilder.AddStepFromType<UserResponseStep>();
 
-        // Configure event-driven flow using native process framework
+        // Configure event-driven flow using ProcessFunctionTargetBuilder (fixed based on working example)
         processBuilder
             .OnInputEvent(AgentOrchestrationEvents.StartProcess)
-            .SendEventTo(new ProcessFunctionTargetBuilder(entityResolutionStep, "ExtractEntitiesAsync"));
+            .SendEventTo(new ProcessFunctionTargetBuilder(entityResolutionStep, parameterName: "processModel"));
 
         entityResolutionStep
             .OnEvent(AgentOrchestrationEvents.EntityExtractionCompleted)
-            .SendEventTo(new ProcessFunctionTargetBuilder(documentSearchStep, "SearchDocumentsAsync"));
+            .SendEventTo(new ProcessFunctionTargetBuilder(documentSearchStep, parameterName: "processModel"));
 
         documentSearchStep
             .OnEvent(AgentOrchestrationEvents.DocumentSearchCompleted)
-            .SendEventTo(new ProcessFunctionTargetBuilder(responseGenerationStep, "GenerateResponseAsync"));
+            .SendEventTo(new ProcessFunctionTargetBuilder(responseGenerationStep, parameterName: "processModel"));
 
         documentSearchStep
             .OnEvent(AgentOrchestrationEvents.UserClarificationNeeded)
-            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, parameterName: "processModel"));
 
         responseGenerationStep
             .OnEvent(AgentOrchestrationEvents.ResponseGenerationCompleted)
-            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, parameterName: "processModel"));
 
         responseGenerationStep
             .OnEvent(AgentOrchestrationEvents.UserClarificationNeeded)
-            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, parameterName: "processModel"));
 
         // Error handling - route all errors to user response step
         entityResolutionStep
             .OnEvent(AgentOrchestrationEvents.ProcessError)
-            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, parameterName: "processModel"));
 
         documentSearchStep
             .OnEvent(AgentOrchestrationEvents.ProcessError)
-            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, parameterName: "processModel"));
 
         responseGenerationStep
             .OnEvent(AgentOrchestrationEvents.ProcessError)
-            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, "SendUserResponseAsync"));
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, parameterName: "processModel"));
 
         // Process completion
         userResponseStep

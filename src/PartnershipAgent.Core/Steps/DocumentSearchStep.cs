@@ -51,7 +51,7 @@ public class DocumentSearchStep : KernelProcessStep
     {
         try
         {
-            _logger.LogInformation("Starting document search for session {SessionId}", processModel.SessionId);
+            _logger.LogInformation("Starting document search for session {ThreadId}", processModel.ThreadId);
             
             // Send status update to client
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
@@ -62,8 +62,8 @@ public class DocumentSearchStep : KernelProcessStep
             var documents = await _faqAgent.SearchDocumentsAsync(processModel.Input, processModel.TenantId, allowedCategories);
             processModel.RelevantDocuments = documents;
 
-            _logger.LogInformation("Found {DocumentCount} relevant documents for session {SessionId}", 
-                documents.Count, processModel.SessionId);
+            _logger.LogInformation("Found {DocumentCount} relevant documents for session {ThreadId}", 
+                documents.Count, processModel.ThreadId);
 
             // Send status update with search results
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
@@ -93,7 +93,7 @@ public class DocumentSearchStep : KernelProcessStep
                 Data = processModel
             });
         }
-        catch (Exception ex) when (LogError(ex, $"Error searching documents for session {processModel.SessionId}"))
+        catch (Exception ex) when (LogError(ex, $"Error searching documents for session {processModel.ThreadId}"))
         {
             processModel.NeedsClarification = true;
             processModel.ClarificationMessage = "I encountered an error while searching for relevant documents. Please try again.";

@@ -4,6 +4,8 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Options;
+using PartnershipAgent.Core.Configuration;
 using PartnershipAgent.Core.Models;
 
 namespace PartnershipAgent.ConsoleApp.Services;
@@ -11,12 +13,13 @@ namespace PartnershipAgent.ConsoleApp.Services;
 public class ChatService
 {
     private readonly HttpClient _httpClient;
-    private readonly string _apiBaseUrl = "http://localhost:5001/api/chat";
+    private readonly string _apiBaseUrl;
     private string _threadId = Guid.NewGuid().ToString();
 
-    public ChatService(HttpClient httpClient)
+    public ChatService(HttpClient httpClient, IOptions<WebApiConfiguration> webApiConfig)
     {
         _httpClient = httpClient;
+        _apiBaseUrl = webApiConfig.Value.ChatUrl;
     }
 
     public async Task RunInteractiveChat()
@@ -95,7 +98,7 @@ public class ChatService
         catch (Exception ex)
         {
             Console.WriteLine($"Error sending message: {ex.Message}");
-            Console.WriteLine("Make sure the Web API is running on http://localhost:5001");
+            Console.WriteLine("Make sure the Web API is running on http://localhost:5000");
         }
 
         Console.WriteLine();

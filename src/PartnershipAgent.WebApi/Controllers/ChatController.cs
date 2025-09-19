@@ -38,7 +38,7 @@ public class ChatController : ControllerBase
 
         try
         {
-            // Process the query using the step orchestration service
+            // Process the query using the step orchestration service (Semantic Kernel process framework)
             var chatResponse = await _stepOrchestrationService.ProcessRequestAsync(request);
             return Ok(chatResponse);
         }

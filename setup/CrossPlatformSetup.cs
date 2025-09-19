@@ -351,7 +351,51 @@ public class CrossPlatformSetup
     {
         Console.WriteLine("\n🔨 Building solution...");
         
-        return await RunCommand("dotnet", "build PartnershipAgent.sln", workingDirectory: _projectRoot);
+        // Check if solution file exists
+        var solutionPath = Path.Combine(_projectRoot, "PartnershipAgent.sln");
+        if (!File.Exists(solutionPath))
+        {
+            Console.WriteLine($"❌ Solution file not found: {solutionPath}");
+            return false;
+        }
+        
+        Console.WriteLine($"Building: {solutionPath}");
+        Console.WriteLine("This may take a few minutes on first run...");
+        
+        // Try the main build first with longer timeout
+        bool buildSuccess = await RunCommandWithProgress("dotnet", "build PartnershipAgent.sln --configuration Release --verbosity minimal", workingDirectory: _projectRoot, timeoutMinutes: 15);
+        
+        if (!buildSuccess)
+        {
+            Console.WriteLine("⚠️ Release build failed, trying Debug build...");
+            buildSuccess = await RunCommandWithProgress("dotnet", "build PartnershipAgent.sln --configuration Debug --verbosity minimal", workingDirectory: _projectRoot, timeoutMinutes: 15);
+        }
+        
+        if (!buildSuccess)
+        {
+            Console.WriteLine("⚠️ Solution build failed, trying restore first...");
+            if (await RunCommand("dotnet", "restore PartnershipAgent.sln", workingDirectory: _projectRoot))
+            {
+                Console.WriteLine("✅ Restore completed, retrying build...");
+                buildSuccess = await RunCommandWithProgress("dotnet", "build PartnershipAgent.sln --configuration Debug --verbosity normal", workingDirectory: _projectRoot, timeoutMinutes: 15);
+            }
+        }
+        
+        if (!buildSuccess)
+        {
+            Console.WriteLine("❌ All build attempts failed. Common Windows issues:");
+            Console.WriteLine("  • Antivirus software blocking file access");
+            Console.WriteLine("  • Files in use by another process");
+            Console.WriteLine("  • Insufficient disk space");
+            Console.WriteLine("  • Network issues downloading packages");
+            Console.WriteLine("\nTry:");
+            Console.WriteLine("  1. Close Visual Studio/VS Code");
+            Console.WriteLine("  2. Disable antivirus temporarily");
+            Console.WriteLine("  3. Run as Administrator");
+            Console.WriteLine("  4. Clear NuGet cache: dotnet nuget locals all --clear");
+        }
+        
+        return buildSuccess;
     }
 
     private static Task RunTests()
@@ -413,6 +457,91 @@ public class CrossPlatformSetup
             return false;
         }
 
+        return true;
+    }
+
+    private static async Task<bool> RunCommandWithProgress(string command, string arguments, 
+        string? workingDirectory = null, int timeoutMinutes = 10)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = command,
+            Arguments = arguments,
+            WorkingDirectory = workingDirectory ?? Directory.GetCurrentDirectory(),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(startInfo);
+        if (process == null)
+        {
+            Console.WriteLine($"❌ Failed to start {command}");
+            return false;
+        }
+
+        // Show progress indicators
+        var cts = new CancellationTokenSource(TimeSpan.FromMinutes(timeoutMinutes));
+        var progressTask = Task.Run(async () =>
+        {
+            var dots = 0;
+            while (!process.HasExited && !cts.Token.IsCancellationRequested)
+            {
+                Console.Write(".");
+                dots++;
+                if (dots % 50 == 0) // New line every 50 dots
+                {
+                    Console.WriteLine();
+                }
+                await Task.Delay(1000, cts.Token);
+            }
+        }, cts.Token);
+
+        // Read output in real-time for important messages
+        var outputTask = Task.Run(async () =>
+        {
+            string? line;
+            while ((line = await process.StandardOutput.ReadLineAsync()) != null)
+            {
+                // Show important build messages
+                if (line.Contains("error") || line.Contains("failed") || line.Contains("warning"))
+                {
+                    Console.WriteLine($"\n{line}");
+                }
+            }
+        });
+
+        try
+        {
+            await process.WaitForExitAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine($"\n❌ Command timed out after {timeoutMinutes} minutes");
+            try { process.Kill(true); } catch { }
+            return false;
+        }
+        finally
+        {
+            cts.Cancel(); // Stop progress indicator
+            try { await progressTask; } catch (OperationCanceledException) { } // Ignore cancellation
+        }
+
+        Console.WriteLine(); // New line after progress dots
+        
+        if (process.ExitCode != 0)
+        {
+            var error = await process.StandardError.ReadToEndAsync();
+            Console.WriteLine($"❌ Build failed with exit code {process.ExitCode}");
+            if (!string.IsNullOrEmpty(error))
+            {
+                Console.WriteLine($"Error output: {error}");
+            }
+            return false;
+        }
+
+        Console.WriteLine("✅ Build completed successfully");
         return true;
     }
 

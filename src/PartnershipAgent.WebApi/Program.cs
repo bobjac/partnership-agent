@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -36,10 +37,16 @@ var elasticPassword = builder.Configuration["ElasticSearch:Password"];
 builder.Services.AddScoped<IKernelBuilder>(provider =>
 {
     var kernelBuilder = Kernel.CreateBuilder();
+    
+    // Configure Azure OpenAI with custom timeout
+    var httpClient = new HttpClient();
+    httpClient.Timeout = TimeSpan.FromSeconds(300); // Set 300-second timeout instead of default 100
+    
     kernelBuilder.AddAzureOpenAIChatCompletion(
         deploymentName: azureOpenAIDeploymentName,
         endpoint: azureOpenAIEndpoint,
-        apiKey: azureOpenAIApiKey);
+        apiKey: azureOpenAIApiKey,
+        httpClient: httpClient);
     return kernelBuilder;
 });
 

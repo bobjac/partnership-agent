@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using PartnershipAgent.Core.Models;
 using PartnershipAgent.Core.Services;
@@ -156,38 +157,66 @@ public class FAQAgent : BaseChatHistoryAgent
             var context = string.Join("\n\n", documents.Select(d => 
                 $"Document: {d.Title}\nCategory: {d.Category}\nContent: {d.Content}"));
 
-            // In the agent-based approach, the LLM will automatically structure the response
-            // based on the ResponseFormat specified in the agent configuration
             var hasRelevantInfo = documents.Any() && !string.IsNullOrEmpty(context);
             var confidence = documents.Count >= 2 ? "high" : documents.Count == 1 ? "medium" : "low";
             
-            // Generate the answer content
-            var answerContent = hasRelevantInfo ? 
-                $"Based on the {documents.Count} relevant document(s), here is the answer to your question about {query}." : 
-                "I don't have enough information in the available documents to answer your question.";
-
-            // Extract citations for the answer
-            var citations = hasRelevantInfo ? 
-                await _citationService.ExtractCitationsAsync(query, answerContent, documents) : 
-                new List<DocumentCitation>();
+            FAQAgentResponse response;
             
-            // This is a simplified version - in practice, the LLM would generate this via the agent
-            var response = new FAQAgentResponse
+            if (hasRelevantInfo)
             {
-                Answer = answerContent,
-                ConfidenceLevel = confidence,
-                HasCompleteAnswer = hasRelevantInfo,
-                SourceDocuments = documents.Select(d => d.Title).ToList(),
-                Citations = citations,
-                FollowUpSuggestions = hasRelevantInfo ? [
-                    "What are the specific requirements for partnership compliance?",
-                    "How are revenue calculations performed?",
-                    "What are the termination procedures for partnerships?"
-                ] : []
-            };
+                // Use the AI agent to generate a comprehensive answer based on the documents
+                var prompt = $"Question: {query}\n\nRelevant Documents:\n{context}\n\nPlease provide a comprehensive answer based on the provided documents.";
+                
+                // Invoke the AI agent to generate the structured response
+                var chatHistory = new ChatHistory();
+                chatHistory.AddUserMessage(prompt);
+                
+                var agentResponses = InvokeAsync(chatHistory);
+                var lastResponse = "";
+                
+                await foreach (var agentResponse in agentResponses)
+                {
+                    if (agentResponse is ChatMessageContent messageContent)
+                    {
+                        lastResponse = messageContent.Content ?? "";
+                    }
+                }
+                
+                response = new FAQAgentResponse
+                {
+                    Answer = !string.IsNullOrEmpty(lastResponse) ? lastResponse : "I was unable to generate a response based on the provided documents.",
+                    ConfidenceLevel = confidence,
+                    HasCompleteAnswer = hasRelevantInfo,
+                    SourceDocuments = documents.Select(d => d.Title).ToList(),
+                    Citations = new List<DocumentCitation>(),
+                    FollowUpSuggestions = hasRelevantInfo ? [
+                        "What are the specific requirements for partnership compliance?",
+                        "How are revenue calculations performed?",
+                        "What are the termination procedures for partnerships?"
+                    ] : []
+                };
+            }
+            else
+            {
+                response = new FAQAgentResponse
+                {
+                    Answer = "I don't have enough information in the available documents to answer your question.",
+                    ConfidenceLevel = "low",
+                    HasCompleteAnswer = false,
+                    SourceDocuments = new List<string>(),
+                    Citations = new List<DocumentCitation>(),
+                    FollowUpSuggestions = new List<string>()
+                };
+            }
+
+            // Extract citations for the answer if we have content
+            if (hasRelevantInfo && !string.IsNullOrEmpty(response.Answer))
+            {
+                response.Citations = await _citationService.ExtractCitationsAsync(query, response.Answer, documents);
+            }
 
             Logger.LogInformation("Generated structured response with confidence: {Confidence} and {CitationCount} citations", 
-                response.ConfidenceLevel, citations.Count);
+                response.ConfidenceLevel, response.Citations?.Count ?? 0);
             return response;
         }
         catch (Exception ex) when (Log(ex, $"Error generating answer for session {ThreadId} with query {query}"))

@@ -11,7 +11,11 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.Configure<WebApiConfiguration>(
     builder.Configuration.GetSection("WebApi"));
 
-builder.Services.AddHttpClient<ChatService>().ConfigurePrimaryHttpMessageHandler(() =>
+builder.Services.AddHttpClient<ChatService>(client =>
+{
+    // Remove timeout for long-running requests
+    client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+}).ConfigurePrimaryHttpMessageHandler(() =>
 {
     var handler = new HttpClientHandler();
     handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true;

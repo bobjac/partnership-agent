@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.ChatCompletion;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Models;
 
@@ -17,7 +20,7 @@ namespace PartnershipAgent.Core.Steps;
 /// </summary>
 public class EntityResolutionStep : KernelProcessStep
 {
-    private readonly IEntityResolutionAgent _entityResolutionAgent;
+    private readonly EntityResolutionAgent _entityResolutionAgent;
     private readonly IBidirectionalToClientChannel _responseChannel;
     private readonly ILogger<EntityResolutionStep> _logger;
 
@@ -28,7 +31,7 @@ public class EntityResolutionStep : KernelProcessStep
     /// <param name="responseChannel">Channel for sending responses to the client</param>
     /// <param name="logger">Logger instance for this step</param>
     public EntityResolutionStep(
-        IEntityResolutionAgent entityResolutionAgent,
+        EntityResolutionAgent entityResolutionAgent,
         IBidirectionalToClientChannel responseChannel, 
         ILogger<EntityResolutionStep> logger)
     {
@@ -56,17 +59,49 @@ public class EntityResolutionStep : KernelProcessStep
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
                 JsonSerializer.Serialize(new { message = "Analyzing your question..." }));
 
-            // Extract entities from the input
-            var entities = await _entityResolutionAgent.ExtractEntitiesAsync(processModel.Input);
-            processModel.ExtractedEntities = entities.ToList();
+            // Use the EntityResolutionAgent with LLM-driven approach
+            var agentMessage = $"""
+                User Input: {processModel.Input}
+
+                Please analyze this text and extract relevant entities focusing on partnership and business terminology.
+                """;
+
+            var chatMessages = new List<ChatMessageContent>() { new ChatMessageContent(AuthorRole.User, agentMessage) };
+            var responseList = await _entityResolutionAgent.InvokeAsync(chatMessages).ToListAsync();
+            var lastMessage = responseList.Last(m => m.Message.Role == AuthorRole.Assistant).Message.Content;
+            var entityResolutionResponse = JsonSerializer.Deserialize<EntityResolutionResponse>(lastMessage, new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
+
+            // Extract entities from the structured response
+            var entities = new List<ExtractedEntity>();
+            
+            if (entityResolutionResponse?.ExtractedEntities?.Any() == true)
+            {
+                // Use entities from the structured response
+                entities = entityResolutionResponse.ExtractedEntities;
+            }
+            else
+            {
+                // Fallback: Use a default entity to ensure processing continues
+                entities = new List<ExtractedEntity>
+                {
+                    new ExtractedEntity 
+                    { 
+                        Text = "general inquiry", 
+                        Type = "general", 
+                        Confidence = 0.6 
+                    }
+                };
+            }
+
+            processModel.ExtractedEntities = entities;
 
             _logger.LogInformation("Extracted {EntityCount} entities for session {ThreadId}", 
-                entities.Count(), processModel.ThreadId);
+                entities.Count, processModel.ThreadId);
 
             // Send status update with extracted entities
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
                 JsonSerializer.Serialize(new { 
-                    message = $"Extracted {entities.Count()} entities from your query",
+                    message = $"Extracted {entities.Count} entities from your query",
                     entities = entities.Select(e => e.Text).ToList()
                 }));
 

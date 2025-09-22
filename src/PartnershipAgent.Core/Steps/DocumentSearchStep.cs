@@ -78,11 +78,46 @@ public class DocumentSearchStep : KernelProcessStep
             var assistantResponse = new ChatMessageContent(AuthorRole.Assistant, lastMessage);
             var faqAgentResponse = JsonSerializer.Deserialize<FAQAgentResponse>(lastMessage, new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
 
-            var documents = faqAgentResponse.SourceDocuments;
-            //faqAgentResponse.d
+            // Convert citations to DocumentResult objects for downstream processing  
+            // Note: This preserves the LLM-driven approach where the agent uses the SearchDocuments tool
+            // and we extract the structured response data for downstream processing
+            var documents = new List<DocumentResult>();
+            
+            if (faqAgentResponse?.Citations?.Any() == true)
+            {
+                // Use detailed citations if available
+                documents = faqAgentResponse.Citations.Select(citation => new DocumentResult
+                {
+                    Id = citation.DocumentId,
+                    Title = citation.DocumentTitle,
+                    Category = citation.Category,
+                    Score = citation.RelevanceScore,
+                    TenantId = processModel.TenantId,
+                    Content = citation.Excerpt,
+                    SourcePath = "",
+                    LastModified = DateTime.UtcNow,
+                    Metadata = new Dictionary<string, object>()
+                }).ToList();
+            }
+            else if (faqAgentResponse?.SourceDocuments?.Any() == true)
+            {
+                // Fallback: Create minimal DocumentResult objects from source document titles
+                // This ensures RelevantDocuments is populated even when Citations aren't properly generated
+                documents = faqAgentResponse.SourceDocuments.Select((title, index) => new DocumentResult
+                {
+                    Id = $"doc-{index}",
+                    Title = title,
+                    Category = "unknown", 
+                    Score = 0.8,
+                    TenantId = processModel.TenantId,
+                    Content = $"Document: {title}",
+                    SourcePath = "",
+                    LastModified = DateTime.UtcNow,
+                    Metadata = new Dictionary<string, object>()
+                }).ToList();
+            }
 
-            //var documents = await _faqAgent.SearchDocumentsAsync(processModel.Input, processModel.TenantId, allowedCategories);
-            //processModel.RelevantDocuments = documents;
+            processModel.RelevantDocuments = documents;
 
             _logger.LogInformation("Found {DocumentCount} relevant documents for session {ThreadId}", 
                 documents.Count, processModel.ThreadId);
@@ -91,7 +126,7 @@ public class DocumentSearchStep : KernelProcessStep
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
                 JsonSerializer.Serialize(new { 
                     message = $"Found {documents.Count} relevant documents",
-                    documentTitles = documents.Select(d => d).ToList()
+                    documentTitles = documents.Select(d => d.Title).ToList()
                 }));
 
             // Check if we found any relevant documents

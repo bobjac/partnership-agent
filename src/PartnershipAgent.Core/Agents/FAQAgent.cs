@@ -73,8 +73,16 @@ public class FAQAgent : BaseChatHistoryAgent
             - A comprehensive answer based on the available information
             - Your confidence level (high/medium/low) based on document relevance and completeness
             - List of source document titles that were used
+            - Detailed citations for each document used, including document ID, title, category, relevant excerpts, and relevance scores
             - Whether you have enough information for a complete answer
             - 2-3 relevant follow-up questions the user might ask
+            
+            For Citations, create detailed DocumentCitation objects for each document you reference, including:
+            - DocumentId: Use the document's ID
+            - DocumentTitle: The document's title
+            - Category: The document's category  
+            - Excerpt: The specific text from the document that supports your answer
+            - RelevanceScore: A score from 0.0 to 1.0 indicating how relevant this document is
             
             If the answer is not in the provided documents, be honest about it in your response.
         ";

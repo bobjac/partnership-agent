@@ -12,6 +12,13 @@ using PartnershipAgent.Core.Steps;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure Kestrel with no timeouts for debugging
+builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(options =>
+{
+    options.Limits.KeepAliveTimeout = System.Threading.Timeout.InfiniteTimeSpan;
+    options.Limits.RequestHeadersTimeout = System.Threading.Timeout.InfiniteTimeSpan;
+});
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -38,9 +45,9 @@ builder.Services.AddScoped<IKernelBuilder>(provider =>
 {
     var kernelBuilder = Kernel.CreateBuilder();
     
-    // Configure Azure OpenAI with custom timeout
+    // Configure Azure OpenAI with NO timeout for debugging
     var httpClient = new HttpClient();
-    httpClient.Timeout = TimeSpan.FromSeconds(300); // Set 300-second timeout instead of default 100
+    httpClient.Timeout = System.Threading.Timeout.InfiniteTimeSpan; // No timeout for debugging with breakpoints
     
     kernelBuilder.AddAzureOpenAIChatCompletion(
         deploymentName: azureOpenAIDeploymentName,

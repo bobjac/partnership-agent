@@ -11,12 +11,12 @@ namespace PartnershipAgent.Core.Services;
 public class SimpleChatProcessService
 {
     private readonly IEntityResolutionAgent _entityAgent;
-    private readonly IFAQAgent _faqAgent;
+    private readonly FAQAgent _faqAgent;
     private readonly ILogger<SimpleChatProcessService> _logger;
 
     public SimpleChatProcessService(
         IEntityResolutionAgent entityAgent,
-        IFAQAgent faqAgent,
+        FAQAgent faqAgent,
         ILogger<SimpleChatProcessService> logger)
     {
         _entityAgent = entityAgent;

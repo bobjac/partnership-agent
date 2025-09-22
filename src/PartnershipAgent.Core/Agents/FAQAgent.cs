@@ -16,7 +16,7 @@ namespace PartnershipAgent.Core.Agents;
 /// The FAQAgent is a specialized agent that answers questions about partnership agreements
 /// using semantic search and structured responses.
 /// </summary>
-public class FAQAgent : BaseChatHistoryAgent, IFAQAgent
+public class FAQAgent : BaseChatHistoryAgent
 {
     private readonly IKernelBuilder _kernelBuilder;
     private readonly IElasticSearchService _elasticSearchService;

@@ -19,7 +19,7 @@ public class SimplePartnershipAgentService
 {
     private static readonly ActivitySource _activitySource = new("PartnershipAgent.Core.Simple");
     private readonly IEntityResolutionAgent _entityAgent;
-    private readonly IFAQAgent _faqAgent;
+    private readonly FAQAgent _faqAgent;
     private readonly ILogger _logger;
 
     /// <summary>
@@ -27,7 +27,7 @@ public class SimplePartnershipAgentService
     /// </summary>
     public SimplePartnershipAgentService(
         IEntityResolutionAgent entityAgent,
-        IFAQAgent faqAgent,
+        FAQAgent faqAgent,
         ILoggerFactory loggerFactory
     )
     {

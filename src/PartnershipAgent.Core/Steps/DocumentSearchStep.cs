@@ -1,13 +1,15 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.ChatCompletion;
+using PartnershipAgent.Core.Agents;
+using PartnershipAgent.Core.Models;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using PartnershipAgent.Core.Agents;
-using PartnershipAgent.Core.Models;
 
 #pragma warning disable SKEXP0080
 
@@ -18,7 +20,7 @@ namespace PartnershipAgent.Core.Steps;
 /// </summary>
 public class DocumentSearchStep : KernelProcessStep
 {
-    private readonly IFAQAgent _faqAgent;
+    private readonly FAQAgent _faqAgent;
     private readonly IBidirectionalToClientChannel _responseChannel;
     private readonly ILogger<DocumentSearchStep> _logger;
 
@@ -29,7 +31,7 @@ public class DocumentSearchStep : KernelProcessStep
     /// <param name="responseChannel">Channel for sending responses to the client</param>
     /// <param name="logger">Logger instance for this step</param>
     public DocumentSearchStep(
-        IFAQAgent faqAgent,
+        FAQAgent faqAgent,
         IBidirectionalToClientChannel responseChannel, 
         ILogger<DocumentSearchStep> logger)
     {
@@ -59,8 +61,28 @@ public class DocumentSearchStep : KernelProcessStep
 
             // Search for relevant documents
             var allowedCategories = GetAllowedCategoriesForTenant(processModel.TenantId);
-            var documents = await _faqAgent.SearchDocumentsAsync(processModel.Input, processModel.TenantId, allowedCategories);
-            processModel.RelevantDocuments = documents;
+
+
+            var agentMessage = $"""
+                User Input: {processModel.InitialPrompt}
+
+                TenantId: {processModel.TenantId}
+
+                Allowed Categories: {string.Join(", ", allowedCategories)}
+
+                """;
+
+            var chatMessages = new List<ChatMessageContent>() { new ChatMessageContent(AuthorRole.User, agentMessage) };
+            var responseList = await _faqAgent.InvokeAsync(chatMessages).ToListAsync();
+            var lastMessage = responseList.Last(m => m.Message.Role == AuthorRole.Assistant).Message.Content;
+            var assistantResponse = new ChatMessageContent(AuthorRole.Assistant, lastMessage);
+            var faqAgentResponse = JsonSerializer.Deserialize<FAQAgentResponse>(lastMessage, new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
+
+            var documents = faqAgentResponse.SourceDocuments;
+            //faqAgentResponse.d
+
+            //var documents = await _faqAgent.SearchDocumentsAsync(processModel.Input, processModel.TenantId, allowedCategories);
+            //processModel.RelevantDocuments = documents;
 
             _logger.LogInformation("Found {DocumentCount} relevant documents for session {ThreadId}", 
                 documents.Count, processModel.ThreadId);
@@ -69,7 +91,7 @@ public class DocumentSearchStep : KernelProcessStep
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
                 JsonSerializer.Serialize(new { 
                     message = $"Found {documents.Count} relevant documents",
-                    documentTitles = documents.Select(d => d.Title).ToList()
+                    documentTitles = documents.Select(d => d).ToList()
                 }));
 
             // Check if we found any relevant documents

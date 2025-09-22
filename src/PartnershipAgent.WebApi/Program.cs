@@ -61,7 +61,7 @@ if (!string.IsNullOrEmpty(elasticUsername) && !string.IsNullOrEmpty(elasticPassw
 builder.Services.AddSingleton<IElasticClient>(new ElasticClient(settings));
 
 builder.Services.AddScoped<IEntityResolutionAgent, EntityResolutionAgent>();
-builder.Services.AddScoped<IFAQAgent>(provider =>
+builder.Services.AddScoped<FAQAgent>(provider =>
 {
     var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
     var elasticSearchService = provider.GetRequiredService<IElasticSearchService>();

@@ -103,9 +103,6 @@ builder.Services.AddScoped<UserResponseStep>();
 // Register the step orchestration service
 builder.Services.AddScoped<StepOrchestrationService>();
 
-// Keep the old services for backward compatibility if needed
-builder.Services.AddScoped<SimpleChatProcessService>();
-builder.Services.AddScoped<SimplePartnershipAgentService>();
 
 var app = builder.Build();
 

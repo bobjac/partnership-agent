@@ -1,14 +1,15 @@
-using System;
-using System.Net.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 using Nest;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Services;
 using PartnershipAgent.Core.Steps;
+using System;
+using System.Net.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -91,16 +92,20 @@ builder.Services.AddScoped<FAQAgent>(provider =>
     var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
     var elasticSearchService = provider.GetRequiredService<IElasticSearchService>();
     var citationService = provider.GetRequiredService<ICitationService>();
+    var chatHistoryService = provider.GetRequiredService<IChatHistoryService>();
     var logger = provider.GetRequiredService<ILogger<FAQAgent>>();
     
     // Create a simple IRequestedBy implementation for this context
     var requestedBy = new SimpleRequestedBy();
     var ThreadId = Guid.NewGuid();
     
-    return new FAQAgent(ThreadId, kernelBuilder, elasticSearchService, citationService, requestedBy, logger);
+    return new FAQAgent(ThreadId, kernelBuilder, elasticSearchService, citationService, chatHistoryService, requestedBy, logger);
 });
 builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
 builder.Services.AddScoped<ICitationService, CitationService>();
+builder.Services.AddSingleton<IChatHistoryService, LocalDeviceChatHistoryService>();
+
+
 
 // Register the response channel
 builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalChannel>();
@@ -142,3 +147,7 @@ public class SimpleRequestedBy : IRequestedBy
     public string CompanyName { get; set; } = "Default Company";
     public string ProjectId { get; set; } = "project-123";
 }
+
+
+
+

@@ -22,6 +22,7 @@ public class FAQAgent : BaseChatHistoryAgent
     private readonly IKernelBuilder _kernelBuilder;
     private readonly IElasticSearchService _elasticSearchService;
     private readonly ICitationService _citationService;
+    private readonly IChatHistoryService _chatHistoryService;
 
     /// <summary>
     /// The name of the agent used for identification in the semantic kernel system.
@@ -42,6 +43,7 @@ public class FAQAgent : BaseChatHistoryAgent
         IKernelBuilder kernelBuilder,
         IElasticSearchService elasticSearchService,
         ICitationService citationService,
+        IChatHistoryService chatHistoryService,
         IRequestedBy requestedBy,
         ILogger<FAQAgent> logger
     ) : base(requestedBy, threadId, logger)
@@ -49,6 +51,7 @@ public class FAQAgent : BaseChatHistoryAgent
         _kernelBuilder = kernelBuilder ?? throw new ArgumentNullException(nameof(kernelBuilder));
         _elasticSearchService = elasticSearchService ?? throw new ArgumentNullException(nameof(elasticSearchService));
         _citationService = citationService ?? throw new ArgumentNullException(nameof(citationService));
+        _chatHistoryService = chatHistoryService ?? throw new ArgumentNullException(nameof(chatHistoryService));
 
         InitializeAgent();
     }
@@ -166,10 +169,10 @@ public class FAQAgent : BaseChatHistoryAgent
             {
                 // Use the AI agent to generate a comprehensive answer based on the documents
                 var prompt = $"Question: {query}\n\nRelevant Documents:\n{context}\n\nPlease provide a comprehensive answer based on the provided documents.";
-                
+
                 // Invoke the AI agent to generate the structured response
-                var chatHistory = new ChatHistory();
-                chatHistory.AddUserMessage(prompt);
+                await _chatHistoryService.AddChatMessageAsync(ThreadId, prompt);
+                var chatHistory = await _chatHistoryService.GetChatHistoryAsync(ThreadId);
                 
                 var agentResponses = InvokeAsync(chatHistory);
                 var lastResponse = "";

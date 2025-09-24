@@ -22,6 +22,7 @@ using OpenAI;
 using Azure.AI.OpenAI;
 using Azure;
 using Azure.Core;
+using System.ClientModel;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -114,8 +115,13 @@ builder.Services.AddScoped<IKernelBuilder>(provider =>
         apiKey: azureOpenAIApiKey,
         httpClient: httpClient);
     
-    // Register IChatClient for evaluation framework - will be resolved from kernel
-    // The evaluation framework needs this to work
+    // Register IChatClient for evaluation framework using AsIChatClient extension method
+    kernelBuilder.Services.AddSingleton<IChatClient>(provider =>
+    {
+        var azureClient = new AzureOpenAIClient(new Uri(azureOpenAIEndpoint), new AzureKeyCredential(azureOpenAIApiKey));
+        var openAIChatClient = azureClient.GetChatClient(azureOpenAIDeploymentName);
+        return openAIChatClient.AsIChatClient();
+    });
     
     return kernelBuilder;
 });

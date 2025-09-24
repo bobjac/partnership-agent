@@ -72,8 +72,7 @@ public abstract class BaseChatHistoryAgent : ChatHistoryAgent
     public override IAsyncEnumerable<ChatMessageContent> InvokeAsync(ChatHistory history, KernelArguments? arguments = null, Kernel? kernel = null, CancellationToken cancellationToken = default)
     {
         // Exceptions are handled by the caller
-
-        return Agent.InvokeAsync(history, arguments, kernel, cancellationToken);
+        return Agent!.InvokeAsync(history, arguments, kernel, cancellationToken);
     }
 
     /// <summary>
@@ -88,8 +87,7 @@ public abstract class BaseChatHistoryAgent : ChatHistoryAgent
     public override IAsyncEnumerable<StreamingChatMessageContent> InvokeStreamingAsync(ChatHistory history, KernelArguments? arguments = null, Kernel? kernel = null, CancellationToken cancellationToken = default)
     {
         // Exceptions are handled by the caller
-
-        return Agent.InvokeStreamingAsync(history, arguments, kernel, cancellationToken);
+        return Agent!.InvokeStreamingAsync(history, arguments, kernel, cancellationToken);
     }
 
     /// <summary>

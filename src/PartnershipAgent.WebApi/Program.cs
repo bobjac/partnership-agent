@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -10,6 +11,13 @@ using PartnershipAgent.Core.Services;
 using PartnershipAgent.Core.Steps;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Kestrel with no timeouts for debugging
+builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(options =>
+{
+    options.Limits.KeepAliveTimeout = System.Threading.Timeout.InfiniteTimeSpan;
+    options.Limits.RequestHeadersTimeout = System.Threading.Timeout.InfiniteTimeSpan;
+});
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -36,10 +44,16 @@ var elasticPassword = builder.Configuration["ElasticSearch:Password"];
 builder.Services.AddScoped<IKernelBuilder>(provider =>
 {
     var kernelBuilder = Kernel.CreateBuilder();
+    
+    // Configure Azure OpenAI with NO timeout for debugging
+    var httpClient = new HttpClient();
+    httpClient.Timeout = System.Threading.Timeout.InfiniteTimeSpan; // No timeout for debugging with breakpoints
+    
     kernelBuilder.AddAzureOpenAIChatCompletion(
         deploymentName: azureOpenAIDeploymentName,
         endpoint: azureOpenAIEndpoint,
-        apiKey: azureOpenAIApiKey);
+        apiKey: azureOpenAIApiKey,
+        httpClient: httpClient);
     return kernelBuilder;
 });
 
@@ -60,8 +74,19 @@ if (!string.IsNullOrEmpty(elasticUsername) && !string.IsNullOrEmpty(elasticPassw
 
 builder.Services.AddSingleton<IElasticClient>(new ElasticClient(settings));
 
-builder.Services.AddScoped<IEntityResolutionAgent, EntityResolutionAgent>();
-builder.Services.AddScoped<IFAQAgent>(provider =>
+builder.Services.AddScoped<EntityResolutionAgent>(provider =>
+{
+    var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
+    var logger = provider.GetRequiredService<ILogger<EntityResolutionAgent>>();
+    
+    // Create a simple IRequestedBy implementation for this context
+    var requestedBy = new SimpleRequestedBy();
+    var ThreadId = Guid.NewGuid();
+    
+    return new EntityResolutionAgent(ThreadId, kernelBuilder, requestedBy, logger);
+});
+
+builder.Services.AddScoped<FAQAgent>(provider =>
 {
     var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
     var elasticSearchService = provider.GetRequiredService<IElasticSearchService>();
@@ -92,9 +117,6 @@ builder.Services.AddScoped<UserResponseStep>();
 // Register the step orchestration service
 builder.Services.AddScoped<StepOrchestrationService>();
 
-// Keep the old services for backward compatibility if needed
-builder.Services.AddScoped<SimpleChatProcessService>();
-builder.Services.AddScoped<SimplePartnershipAgentService>();
 
 var app = builder.Build();
 

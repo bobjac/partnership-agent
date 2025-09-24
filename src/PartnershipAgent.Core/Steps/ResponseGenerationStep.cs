@@ -16,7 +16,7 @@ namespace PartnershipAgent.Core.Steps;
 /// </summary>
 public class ResponseGenerationStep : KernelProcessStep
 {
-    private readonly IFAQAgent _faqAgent;
+    private readonly FAQAgent _faqAgent;
     private readonly IBidirectionalToClientChannel _responseChannel;
     private readonly ILogger<ResponseGenerationStep> _logger;
 
@@ -27,7 +27,7 @@ public class ResponseGenerationStep : KernelProcessStep
     /// <param name="responseChannel">Channel for sending responses to the client</param>
     /// <param name="logger">Logger instance for this step</param>
     public ResponseGenerationStep(
-        IFAQAgent faqAgent,
+        FAQAgent faqAgent,
         IBidirectionalToClientChannel responseChannel, 
         ILogger<ResponseGenerationStep> logger)
     {

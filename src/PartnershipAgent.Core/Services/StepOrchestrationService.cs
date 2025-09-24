@@ -73,8 +73,8 @@ public class StepOrchestrationService
             
             // Create a kernel builder and register the services (following working pattern)
             var kernelBuilder = Kernel.CreateBuilder();
-            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IEntityResolutionAgent>());
-            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IFAQAgent>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<EntityResolutionAgent>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<FAQAgent>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IBidirectionalToClientChannel>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ProcessResponseCollector>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<EntityResolutionStep>>());

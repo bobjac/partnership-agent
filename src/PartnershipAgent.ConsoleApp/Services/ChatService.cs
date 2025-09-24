@@ -20,6 +20,10 @@ public class ChatService
     {
         _httpClient = httpClient;
         _apiBaseUrl = webApiConfig.Value.ChatUrl;
+        
+        // Remove ALL timeouts for debugging with breakpoints
+        _httpClient.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+        Console.WriteLine("🔧 HttpClient timeout: DISABLED (infinite timeout for debugging)");
     }
 
     public async Task RunInteractiveChat()

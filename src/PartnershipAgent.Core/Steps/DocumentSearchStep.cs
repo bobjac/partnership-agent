@@ -1,13 +1,15 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.ChatCompletion;
+using PartnershipAgent.Core.Agents;
+using PartnershipAgent.Core.Models;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using PartnershipAgent.Core.Agents;
-using PartnershipAgent.Core.Models;
 
 #pragma warning disable SKEXP0080
 
@@ -18,7 +20,7 @@ namespace PartnershipAgent.Core.Steps;
 /// </summary>
 public class DocumentSearchStep : KernelProcessStep
 {
-    private readonly IFAQAgent _faqAgent;
+    private readonly FAQAgent _faqAgent;
     private readonly IBidirectionalToClientChannel _responseChannel;
     private readonly ILogger<DocumentSearchStep> _logger;
 
@@ -29,7 +31,7 @@ public class DocumentSearchStep : KernelProcessStep
     /// <param name="responseChannel">Channel for sending responses to the client</param>
     /// <param name="logger">Logger instance for this step</param>
     public DocumentSearchStep(
-        IFAQAgent faqAgent,
+        FAQAgent faqAgent,
         IBidirectionalToClientChannel responseChannel, 
         ILogger<DocumentSearchStep> logger)
     {
@@ -59,7 +61,62 @@ public class DocumentSearchStep : KernelProcessStep
 
             // Search for relevant documents
             var allowedCategories = GetAllowedCategoriesForTenant(processModel.TenantId);
-            var documents = await _faqAgent.SearchDocumentsAsync(processModel.Input, processModel.TenantId, allowedCategories);
+
+
+            var agentMessage = $"""
+                User Input: {processModel.InitialPrompt}
+
+                TenantId: {processModel.TenantId}
+
+                Allowed Categories: {string.Join(", ", allowedCategories)}
+
+                """;
+
+            var chatMessages = new List<ChatMessageContent>() { new ChatMessageContent(AuthorRole.User, agentMessage) };
+            var responseList = await _faqAgent.InvokeAsync(chatMessages).ToListAsync();
+            var lastMessage = responseList.Last(m => m.Message.Role == AuthorRole.Assistant).Message.Content;
+            var assistantResponse = new ChatMessageContent(AuthorRole.Assistant, lastMessage);
+            var faqAgentResponse = JsonSerializer.Deserialize<FAQAgentResponse>(lastMessage, new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
+
+            // Convert citations to DocumentResult objects for downstream processing  
+            // Note: This preserves the LLM-driven approach where the agent uses the SearchDocuments tool
+            // and we extract the structured response data for downstream processing
+            var documents = new List<DocumentResult>();
+            
+            if (faqAgentResponse?.Citations?.Any() == true)
+            {
+                // Use detailed citations if available
+                documents = faqAgentResponse.Citations.Select(citation => new DocumentResult
+                {
+                    Id = citation.DocumentId,
+                    Title = citation.DocumentTitle,
+                    Category = citation.Category,
+                    Score = citation.RelevanceScore,
+                    TenantId = processModel.TenantId,
+                    Content = citation.Excerpt,
+                    SourcePath = "",
+                    LastModified = DateTime.UtcNow,
+                    Metadata = new Dictionary<string, object>()
+                }).ToList();
+            }
+            else if (faqAgentResponse?.SourceDocuments?.Any() == true)
+            {
+                // Fallback: Create minimal DocumentResult objects from source document titles
+                // This ensures RelevantDocuments is populated even when Citations aren't properly generated
+                documents = faqAgentResponse.SourceDocuments.Select((title, index) => new DocumentResult
+                {
+                    Id = $"doc-{index}",
+                    Title = title,
+                    Category = "unknown", 
+                    Score = 0.8,
+                    TenantId = processModel.TenantId,
+                    Content = $"Document: {title}",
+                    SourcePath = "",
+                    LastModified = DateTime.UtcNow,
+                    Metadata = new Dictionary<string, object>()
+                }).ToList();
+            }
+
             processModel.RelevantDocuments = documents;
 
             _logger.LogInformation("Found {DocumentCount} relevant documents for session {ThreadId}", 

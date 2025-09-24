@@ -1,3 +1,4 @@
+using System;
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,10 +12,16 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.Configure<WebApiConfiguration>(
     builder.Configuration.GetSection("WebApi"));
 
-builder.Services.AddHttpClient<ChatService>().ConfigurePrimaryHttpMessageHandler(() =>
+builder.Services.AddHttpClient<ChatService>((serviceProvider, client) =>
+{
+    // Force infinite timeout for debugging - no timeouts anywhere
+    client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+}).ConfigurePrimaryHttpMessageHandler(() =>
 {
     var handler = new HttpClientHandler();
     handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true;
+    handler.MaxConnectionsPerServer = 100;
+    // Remove any potential socket timeouts
     return handler;
 });
 builder.Services.AddScoped<ChatService>();

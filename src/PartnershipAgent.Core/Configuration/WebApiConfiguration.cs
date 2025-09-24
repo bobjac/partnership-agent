@@ -16,6 +16,11 @@ public class WebApiConfiguration
     public WebApiEndpoints Endpoints { get; set; } = new();
 
     /// <summary>
+    /// HTTP timeout in seconds (0 = infinite timeout)
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = 0;
+
+    /// <summary>
     /// Gets the full URL for the chat endpoint
     /// </summary>
     public string ChatUrl => $"{BaseUrl.TrimEnd('/')}{Endpoints.Chat}";

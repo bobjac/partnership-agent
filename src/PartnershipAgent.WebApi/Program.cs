@@ -6,8 +6,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 using Nest;
 using OpenTelemetry;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -15,6 +17,11 @@ using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Services;
 using PartnershipAgent.Core.Steps;
+using Microsoft.Extensions.AI;
+using OpenAI;
+using Azure.AI.OpenAI;
+using Azure;
+using Azure.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,7 +45,7 @@ builder.Services.AddOpenTelemetry()
     {
         builder
             .AddSource("PartnershipAgent.StepOrchestration")
-            .AddSource("PartnershipAgent.Agents")
+            .AddSource("PartnershipAgent.Agents") 
             .AddSource("PartnershipAgent.Evaluation")
             .SetResourceBuilder(
                 ResourceBuilder.CreateDefault()
@@ -52,10 +59,25 @@ builder.Services.AddOpenTelemetry()
 
         if (!string.IsNullOrEmpty(applicationInsightsConnectionString))
         {
-            builder.AddConsoleExporter(); // Using console for now, Azure Monitor requires additional setup
+            Console.WriteLine($"[TELEMETRY] Configuring Azure Monitor with connection string: {applicationInsightsConnectionString[..50]}...");
+            try 
+            {
+                builder.AddAzureMonitorTraceExporter(options =>
+                {
+                    options.ConnectionString = applicationInsightsConnectionString;
+                });
+                builder.AddConsoleExporter(); // Keep console for debugging
+                Console.WriteLine("[TELEMETRY] Azure Monitor Trace Exporter and Console Exporter configured successfully");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TELEMETRY] Error configuring Azure Monitor: {ex.Message}");
+                builder.AddConsoleExporter(); // Fallback to console only
+            }
         }
         else
         {
+            Console.WriteLine("[TELEMETRY] No Application Insights connection string found, using console only");
             builder.AddConsoleExporter();
         }
     });
@@ -91,6 +113,10 @@ builder.Services.AddScoped<IKernelBuilder>(provider =>
         endpoint: azureOpenAIEndpoint,
         apiKey: azureOpenAIApiKey,
         httpClient: httpClient);
+    
+    // Register IChatClient for evaluation framework - will be resolved from kernel
+    // The evaluation framework needs this to work
+    
     return kernelBuilder;
 });
 

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using PartnershipAgent.Core.Agents;
+using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Models;
 
 #pragma warning disable SKEXP0080
@@ -19,6 +20,7 @@ public class ResponseGenerationStep : KernelProcessStep
     private readonly FAQAgent _faqAgent;
     private readonly IBidirectionalToClientChannel _responseChannel;
     private readonly ILogger<ResponseGenerationStep> _logger;
+    private readonly IAssistantResponseEvaluator? _evaluator;
 
     /// <summary>
     /// Constructor for ResponseGenerationStep.
@@ -29,11 +31,13 @@ public class ResponseGenerationStep : KernelProcessStep
     public ResponseGenerationStep(
         FAQAgent faqAgent,
         IBidirectionalToClientChannel responseChannel, 
-        ILogger<ResponseGenerationStep> logger)
+        ILogger<ResponseGenerationStep> logger,
+        IAssistantResponseEvaluator? evaluator = null)
     {
         _faqAgent = faqAgent ?? throw new ArgumentNullException(nameof(faqAgent));
         _responseChannel = responseChannel ?? throw new ArgumentNullException(nameof(responseChannel));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _evaluator = evaluator;
     }
 
     /// <summary>
@@ -62,6 +66,27 @@ public class ResponseGenerationStep : KernelProcessStep
 
             _logger.LogInformation("Generated response with confidence {Confidence} for session {ThreadId}", 
                 structuredResponse.ConfidenceLevel, processModel.ThreadId);
+
+            // Evaluate the response quality if evaluator is available
+            if (_evaluator != null && !string.IsNullOrWhiteSpace(structuredResponse.Answer))
+            {
+                try
+                {
+                    using var activity = System.Diagnostics.Activity.Current?.Source?.StartActivity("FAQAgent Evaluation");
+                    _ = await _evaluator.EvaluateAndLogAsync(
+                        userPrompt: processModel.Input,
+                        response: structuredResponse.Answer,
+                        module: "FAQAgent",
+                        parentActivity: activity?.Source,
+                        expectedAnswer: null
+                    );
+                }
+                catch (Exception evalEx)
+                {
+                    _logger.LogWarning(evalEx, "Failed to evaluate FAQ response for session {ThreadId}", processModel.ThreadId);
+                    // Continue without failing the request
+                }
+            }
 
             // Send status update with response metadata
             await _responseChannel.WriteAsync(AIEventTypes.Status, 

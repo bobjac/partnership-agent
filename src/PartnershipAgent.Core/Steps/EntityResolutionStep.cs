@@ -9,6 +9,7 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using PartnershipAgent.Core.Agents;
+using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Models;
 
 #pragma warning disable SKEXP0080
@@ -23,6 +24,7 @@ public class EntityResolutionStep : KernelProcessStep
     private readonly EntityResolutionAgent _entityResolutionAgent;
     private readonly IBidirectionalToClientChannel _responseChannel;
     private readonly ILogger<EntityResolutionStep> _logger;
+    private readonly IAssistantResponseEvaluator? _evaluator;
 
     /// <summary>
     /// Constructor for EntityResolutionStep.
@@ -33,11 +35,13 @@ public class EntityResolutionStep : KernelProcessStep
     public EntityResolutionStep(
         EntityResolutionAgent entityResolutionAgent,
         IBidirectionalToClientChannel responseChannel, 
-        ILogger<EntityResolutionStep> logger)
+        ILogger<EntityResolutionStep> logger,
+        IAssistantResponseEvaluator? evaluator = null)
     {
         _entityResolutionAgent = entityResolutionAgent ?? throw new ArgumentNullException(nameof(entityResolutionAgent));
         _responseChannel = responseChannel ?? throw new ArgumentNullException(nameof(responseChannel));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _evaluator = evaluator;
     }
 
     /// <summary>
@@ -66,10 +70,32 @@ public class EntityResolutionStep : KernelProcessStep
                 Please analyze this text and extract relevant entities focusing on partnership and business terminology.
                 """;
 
-            var chatMessages = new List<ChatMessageContent>() { new ChatMessageContent(AuthorRole.User, agentMessage) };
+            var chatMessages = new List<ChatMessageContent> { new(AuthorRole.User, agentMessage) };
             var responseList = await _entityResolutionAgent.InvokeAsync(chatMessages).ToListAsync();
             var lastMessage = responseList.Last(m => m.Message.Role == AuthorRole.Assistant).Message.Content;
-            var entityResolutionResponse = JsonSerializer.Deserialize<EntityResolutionResponse>(lastMessage, new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
+            
+            // Evaluate the entity extraction response if evaluator is available
+            if (_evaluator != null && !string.IsNullOrWhiteSpace(lastMessage))
+            {
+                try
+                {
+                    using var activity = System.Diagnostics.Activity.Current?.Source?.StartActivity("EntityResolution Evaluation");
+                    _ = await _evaluator.EvaluateAndLogAsync(
+                        userPrompt: processModel.Input,
+                        response: lastMessage,
+                        module: "EntityResolutionAgent",
+                        parentActivity: activity?.Source,
+                        expectedAnswer: null
+                    );
+                }
+                catch (Exception evalEx)
+                {
+                    _logger.LogWarning(evalEx, "Failed to evaluate entity resolution response for session {ThreadId}", processModel.ThreadId);
+                    // Continue without failing the request
+                }
+            }
+
+            var entityResolutionResponse = JsonSerializer.Deserialize<EntityResolutionResponse>(lastMessage ?? "", new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             // Extract entities from the structured response
             var entities = new List<ExtractedEntity>();

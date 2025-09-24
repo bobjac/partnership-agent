@@ -1,12 +1,18 @@
 using System;
 using System.Net.Http;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Nest;
+using OpenTelemetry;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using PartnershipAgent.Core.Agents;
+using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Services;
 using PartnershipAgent.Core.Steps;
 
@@ -22,6 +28,37 @@ builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServe
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Configure OpenTelemetry
+var applicationInsightsConnectionString = builder.Configuration["ApplicationInsights:ConnectionString"] 
+    ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(builder =>
+    {
+        builder
+            .AddSource("PartnershipAgent.StepOrchestration")
+            .AddSource("PartnershipAgent.Agents")
+            .AddSource("PartnershipAgent.Evaluation")
+            .SetResourceBuilder(
+                ResourceBuilder.CreateDefault()
+                    .AddService(serviceName: "PartnershipAgent", serviceVersion: "1.0.0"))
+            .AddHttpClientInstrumentation()
+            .AddAspNetCoreInstrumentation(options =>
+            {
+                options.RecordException = true;
+                options.Filter = (httpContext) => !httpContext.Request.Path.StartsWithSegments("/health");
+            });
+
+        if (!string.IsNullOrEmpty(applicationInsightsConnectionString))
+        {
+            builder.AddConsoleExporter(); // Using console for now, Azure Monitor requires additional setup
+        }
+        else
+        {
+            builder.AddConsoleExporter();
+        }
+    });
 
 var azureOpenAIEndpoint = builder.Configuration["AzureOpenAI:Endpoint"] 
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
@@ -116,6 +153,13 @@ builder.Services.AddScoped<UserResponseStep>();
 
 // Register the step orchestration service
 builder.Services.AddScoped<StepOrchestrationService>();
+
+// Register evaluation services conditionally
+var evaluationEnabled = builder.Configuration.GetValue<bool>("Evaluation:Enabled", false);
+if (evaluationEnabled)
+{
+    builder.Services.AddScoped<IAssistantResponseEvaluator, AssistantResponseEvaluator>();
+}
 
 
 var app = builder.Build();

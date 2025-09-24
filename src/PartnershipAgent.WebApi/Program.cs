@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -41,6 +42,10 @@ var azureOpenAIApiVersion = builder.Configuration["AzureOpenAI:ApiVersion"]
 var elasticSearchUri = builder.Configuration["ElasticSearch:Uri"] ?? "http://localhost:9200";
 var elasticUsername = builder.Configuration["ElasticSearch:Username"];
 var elasticPassword = builder.Configuration["ElasticSearch:Password"];
+
+var azureSQLConnectionString = builder.Configuration.GetConnectionString("AzureSQL")
+    ?? Environment.GetEnvironmentVariable("AzureSQL")
+    ?? throw new InvalidOperationException("Azure SQL Connection String not found in configuration or environment variables");
 
 builder.Services.AddScoped<IKernelBuilder>(provider =>
 {
@@ -103,9 +108,13 @@ builder.Services.AddScoped<FAQAgent>(provider =>
 });
 builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
 builder.Services.AddScoped<ICitationService, CitationService>();
-builder.Services.AddSingleton<IChatHistoryService, LocalDeviceChatHistoryService>();
 
 
+// Register Chat History Service
+builder.Services.AddSingleton<IChatHistoryService>(sp =>
+{
+    return new AzureSQLChatHistoryService(azureSQLConnectionString);
+});
 
 // Register the response channel
 builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalChannel>();

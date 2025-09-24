@@ -10,6 +10,6 @@ namespace PartnershipAgent.Core.Services;
 
 public interface IChatHistoryService
 {
-    Task AddChatMessageAsync(Guid thread_id, string chatMessage);
+    Task AddMessageToChatHistoryAsync(Guid thread_id, ChatMessageContent chatMessage);
     Task<ChatHistory> GetChatHistoryAsync(Guid thread_id);
 }

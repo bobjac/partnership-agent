@@ -4,6 +4,7 @@ using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Models;
+using PartnershipAgent.Core.Services;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -22,6 +23,7 @@ public class DocumentSearchStep : KernelProcessStep
 {
     private readonly FAQAgent _faqAgent;
     private readonly IBidirectionalToClientChannel _responseChannel;
+    private readonly IChatHistoryService _chatHistoryService;
     private readonly ILogger<DocumentSearchStep> _logger;
 
     /// <summary>
@@ -32,11 +34,13 @@ public class DocumentSearchStep : KernelProcessStep
     /// <param name="logger">Logger instance for this step</param>
     public DocumentSearchStep(
         FAQAgent faqAgent,
-        IBidirectionalToClientChannel responseChannel, 
+        IBidirectionalToClientChannel responseChannel,
+        IChatHistoryService chatHistoryService,
         ILogger<DocumentSearchStep> logger)
     {
         _faqAgent = faqAgent ?? throw new ArgumentNullException(nameof(faqAgent));
         _responseChannel = responseChannel ?? throw new ArgumentNullException(nameof(responseChannel));
+        _chatHistoryService = chatHistoryService ?? throw new ArgumentNullException(nameof(chatHistoryService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -72,10 +76,12 @@ public class DocumentSearchStep : KernelProcessStep
 
                 """;
 
-            var chatMessages = new List<ChatMessageContent>() { new ChatMessageContent(AuthorRole.User, agentMessage) };
+            await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.User, agentMessage));
+            var chatMessages = await _chatHistoryService.GetChatHistoryAsync(processModel.ThreadId);
             var responseList = await _faqAgent.InvokeAsync(chatMessages).ToListAsync();
-            var lastMessage = responseList.Last(m => m.Message.Role == AuthorRole.Assistant).Message.Content;
+            var lastMessage = responseList.Last(m => m.Role == AuthorRole.Assistant).Content;
             var assistantResponse = new ChatMessageContent(AuthorRole.Assistant, lastMessage);
+            await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, assistantResponse);
             var faqAgentResponse = JsonSerializer.Deserialize<FAQAgentResponse>(lastMessage, new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
 
             // Convert citations to DocumentResult objects for downstream processing  

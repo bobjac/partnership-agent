@@ -38,7 +38,6 @@ public class ChatController : ControllerBase
 
         try
         {
-            //request.ThreadId = "2cae3d74-c318-4271-8b97-5962921e5750";
             // Process the query using the step orchestration service (Semantic Kernel process framework)
             var chatResponse = await _stepOrchestrationService.ProcessRequestAsync(request);
             return Ok(chatResponse);

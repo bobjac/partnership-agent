@@ -10,6 +10,7 @@ using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Models;
+using PartnershipAgent.Core.Services;
 
 #pragma warning disable SKEXP0080
 
@@ -22,6 +23,7 @@ public class EntityResolutionStep : KernelProcessStep
 {
     private readonly EntityResolutionAgent _entityResolutionAgent;
     private readonly IBidirectionalToClientChannel _responseChannel;
+    private readonly IChatHistoryService _chatHistoryService;
     private readonly ILogger<EntityResolutionStep> _logger;
 
     /// <summary>
@@ -32,11 +34,13 @@ public class EntityResolutionStep : KernelProcessStep
     /// <param name="logger">Logger instance for this step</param>
     public EntityResolutionStep(
         EntityResolutionAgent entityResolutionAgent,
-        IBidirectionalToClientChannel responseChannel, 
+        IBidirectionalToClientChannel responseChannel,
+        IChatHistoryService chatHistoryService,
         ILogger<EntityResolutionStep> logger)
     {
         _entityResolutionAgent = entityResolutionAgent ?? throw new ArgumentNullException(nameof(entityResolutionAgent));
         _responseChannel = responseChannel ?? throw new ArgumentNullException(nameof(responseChannel));
+        _chatHistoryService = chatHistoryService ?? throw new ArgumentNullException(nameof(chatHistoryService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -66,9 +70,12 @@ public class EntityResolutionStep : KernelProcessStep
                 Please analyze this text and extract relevant entities focusing on partnership and business terminology.
                 """;
 
-            var chatMessages = new List<ChatMessageContent>() { new ChatMessageContent(AuthorRole.User, agentMessage) };
+            await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.User, agentMessage));
+            var chatMessages = await _chatHistoryService.GetChatHistoryAsync(processModel.ThreadId);
             var responseList = await _entityResolutionAgent.InvokeAsync(chatMessages).ToListAsync();
-            var lastMessage = responseList.Last(m => m.Message.Role == AuthorRole.Assistant).Message.Content;
+            var lastMessage = responseList.Last(m => m.Role == AuthorRole.Assistant).Content;
+            var assistantResponse = new ChatMessageContent(AuthorRole.Assistant, lastMessage);
+            await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, assistantResponse);
             var entityResolutionResponse = JsonSerializer.Deserialize<EntityResolutionResponse>(lastMessage, new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
 
             // Extract entities from the structured response

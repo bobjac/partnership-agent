@@ -9,6 +9,7 @@ using Nest;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Services;
 using PartnershipAgent.Core.Steps;
+using Microsoft.ApplicationInsights.Extensibility;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +23,20 @@ builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServe
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+//Add Application Insights Telemetry
+builder.Services.AddApplicationInsightsTelemetry(options =>
+{
+    options.ConnectionString = builder.Configuration["ApplicationInsights:ConnectionString"];
+});
+
+builder.Logging.AddApplicationInsights(
+    configureTelemetryConfiguration: (config) =>
+    {
+        config.ConnectionString = builder.Configuration["ApplicationInsights:ConnectionString"];
+    },
+    configureApplicationInsightsLoggerOptions: (options) => { }
+);
 
 var azureOpenAIEndpoint = builder.Configuration["AzureOpenAI:Endpoint"] 
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")

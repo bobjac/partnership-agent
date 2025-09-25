@@ -1,14 +1,28 @@
 using System;
 using System.Net.Http;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 using Nest;
+using OpenTelemetry;
+using Azure.Monitor.OpenTelemetry.Exporter;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using PartnershipAgent.Core.Agents;
+using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Services;
 using PartnershipAgent.Core.Steps;
+using Microsoft.Extensions.AI;
+using OpenAI;
+using Azure.AI.OpenAI;
+using Azure;
+using Azure.Core;
+using System.ClientModel;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +36,52 @@ builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServe
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Configure OpenTelemetry
+var applicationInsightsConnectionString = builder.Configuration["ApplicationInsights:ConnectionString"] 
+    ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(builder =>
+    {
+        builder
+            .AddSource("PartnershipAgent.StepOrchestration")
+            .AddSource("PartnershipAgent.Agents") 
+            .AddSource("PartnershipAgent.Evaluation")
+            .SetResourceBuilder(
+                ResourceBuilder.CreateDefault()
+                    .AddService(serviceName: "PartnershipAgent", serviceVersion: "1.0.0"))
+            .AddHttpClientInstrumentation()
+            .AddAspNetCoreInstrumentation(options =>
+            {
+                options.RecordException = true;
+                options.Filter = (httpContext) => !httpContext.Request.Path.StartsWithSegments("/health");
+            });
+
+        if (!string.IsNullOrEmpty(applicationInsightsConnectionString))
+        {
+            Console.WriteLine($"[TELEMETRY] Configuring Azure Monitor with connection string: {applicationInsightsConnectionString[..50]}...");
+            try 
+            {
+                builder.AddAzureMonitorTraceExporter(options =>
+                {
+                    options.ConnectionString = applicationInsightsConnectionString;
+                });
+                builder.AddConsoleExporter(); // Keep console for debugging
+                Console.WriteLine("[TELEMETRY] Azure Monitor Trace Exporter and Console Exporter configured successfully");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TELEMETRY] Error configuring Azure Monitor: {ex.Message}");
+                builder.AddConsoleExporter(); // Fallback to console only
+            }
+        }
+        else
+        {
+            Console.WriteLine("[TELEMETRY] No Application Insights connection string found, using console only");
+            builder.AddConsoleExporter();
+        }
+    });
 
 var azureOpenAIEndpoint = builder.Configuration["AzureOpenAI:Endpoint"] 
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
@@ -54,6 +114,15 @@ builder.Services.AddScoped<IKernelBuilder>(provider =>
         endpoint: azureOpenAIEndpoint,
         apiKey: azureOpenAIApiKey,
         httpClient: httpClient);
+    
+    // Register IChatClient for evaluation framework using AsIChatClient extension method
+    kernelBuilder.Services.AddSingleton<IChatClient>(provider =>
+    {
+        var azureClient = new AzureOpenAIClient(new Uri(azureOpenAIEndpoint), new AzureKeyCredential(azureOpenAIApiKey));
+        var openAIChatClient = azureClient.GetChatClient(azureOpenAIDeploymentName);
+        return openAIChatClient.AsIChatClient();
+    });
+    
     return kernelBuilder;
 });
 
@@ -116,6 +185,13 @@ builder.Services.AddScoped<UserResponseStep>();
 
 // Register the step orchestration service
 builder.Services.AddScoped<StepOrchestrationService>();
+
+// Register evaluation services conditionally
+var evaluationEnabled = builder.Configuration.GetValue<bool>("Evaluation:Enabled", false);
+if (evaluationEnabled)
+{
+    builder.Services.AddScoped<IAssistantResponseEvaluator, AssistantResponseEvaluator>();
+}
 
 
 var app = builder.Build();

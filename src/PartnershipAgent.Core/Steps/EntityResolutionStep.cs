@@ -95,7 +95,25 @@ public class EntityResolutionStep : KernelProcessStep
                 }
             }
 
-            var entityResolutionResponse = JsonSerializer.Deserialize<EntityResolutionResponse>(lastMessage ?? "", new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            EntityResolutionResponse entityResolutionResponse = null;
+            if (!string.IsNullOrWhiteSpace(lastMessage))
+            {
+                try
+                {
+                    entityResolutionResponse = JsonSerializer.Deserialize<EntityResolutionResponse>(
+                        lastMessage,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                    );
+                }
+                catch (JsonException jsonEx)
+                {
+                    _logger.LogWarning(jsonEx, "Failed to deserialize entity resolution response for session {ThreadId}. Content: {Content}", processModel.ThreadId, lastMessage);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Unexpected error during deserialization of entity resolution response for session {ThreadId}. Content: {Content}", processModel.ThreadId, lastMessage);
+                }
+            }
 
             // Extract entities from the structured response
             var entities = new List<ExtractedEntity>();

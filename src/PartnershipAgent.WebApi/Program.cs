@@ -180,7 +180,7 @@ builder.Services.AddScoped<ICitationService, CitationService>();
 builder.Services.AddSingleton<ISqlConnectionFactory>(sp =>
 {
     return new SqlConnectionFactory(azureSQLConnectionString);
-}); ;
+});
 
 // Register Chat History Service
 builder.Services.AddScoped<IChatHistoryService, AzureSqlChatHistoryService>();

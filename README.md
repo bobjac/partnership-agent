@@ -11,17 +11,25 @@ Built with Azure OpenAI, Elasticsearch, ASP.NET Core, and enhanced with intellig
 Works identically on **Windows, macOS, and Linux**:
 
 ```bash
-# Linux/macOS
+# Linux/macOS - Default (InMemory chat history)
 cd setup
 ./setup.sh
 
+# Linux/macOS - With persistent SQLite chat history
+cd setup
+./setup.sh sqlite
+
+# Linux/macOS - With Azure SQL chat history  
+cd setup
+./setup.sh azuresql
+
 # Windows Command Prompt
 cd setup
-setup.cmd
+setup.cmd [inmemory|sqlite|azuresql]
 
 # Windows PowerShell  
 cd setup
-.\setup.cmd
+.\setup.cmd [inmemory|sqlite|azuresql]
 ```
 
 **Why this is preferred:**
@@ -48,8 +56,37 @@ cd setup
 ### Manual .NET Execution
 ```bash
 cd setup
-dotnet run --project setup.csproj
+dotnet run --project setup.csproj [inmemory|sqlite|azuresql]
+
+# Examples:
+dotnet run                  # Uses InMemory (default)
+dotnet run sqlite          # Uses SQLite with Docker container
+dotnet run azuresql        # Uses Azure SQL Database
 ```
+
+## 💾 Chat History Options
+
+The Partnership Agent supports three chat history storage options:
+
+### 🧠 **InMemory (Default)**
+- **Best for**: Development, testing, quick demos
+- **Persistence**: No persistence - data lost on restart
+- **Setup**: Zero configuration required
+- **Performance**: Fastest startup and response times
+
+### 🗄️ **SQLite (Recommended for Local Development)**
+- **Best for**: Local development with persistence, offline work
+- **Persistence**: Full persistence in local SQLite database
+- **Setup**: Automatic Docker container with volume mounting
+- **Performance**: Fast local file-based storage
+- **Container**: `partnership-agent-sqlite` with persistent volume
+
+### ☁️ **Azure SQL Database**
+- **Best for**: Production deployments, multi-user scenarios
+- **Persistence**: Full persistence in cloud database
+- **Setup**: Requires Azure SQL Database and connection configuration
+- **Performance**: Network-dependent, highly scalable
+- **Features**: Enterprise-grade reliability and backup
 
 ## 🎯 What Gets Set Up
 
@@ -125,6 +162,16 @@ Try these prompts to see rich citations in action:
                        │ - Relevance      │
                        │   scoring        │
                        └──────────────────┘
+                                │
+                                ▼
+                    ┌──────────────────────────┐
+                    │    Chat History          │
+                    │    Storage               │
+                    ├──────────────────────────┤
+                    │ 🧠 InMemory (Default)    │
+                    │ 🗄️ SQLite Container      │
+                    │ ☁️ Azure SQL Database    │
+                    └──────────────────────────┘
 ```
 
 ## 🔌 Running the Applications
@@ -191,8 +238,11 @@ Responses now include detailed citations:
 
 - **.NET 8 SDK** - [Download here](https://dotnet.microsoft.com/download)
 - **Docker** - [Docker Desktop](https://www.docker.com/products/docker-desktop) (Windows) or Docker Engine (Linux/macOS)
+  - Required for Elasticsearch (all setups)
+  - Required for SQLite chat history (optional)
 - **Azure OpenAI** - Access to Azure OpenAI service with deployed model
-- **Internet connection** - For downloading Elasticsearch Docker image
+- **Internet connection** - For downloading Docker images
+- **Azure SQL Database** - Only required if using Azure SQL chat history option
 
 ## 📚 Documentation
 
@@ -241,13 +291,48 @@ partnership-agent/
 - **Semantic Kernel** for agent orchestration
 - **Step-based processing** with entity resolution and response generation
 
+## ⚙️ Configuration Options
+
+### Chat History Provider Configuration
+
+You can configure chat history storage through user secrets or directly:
+
+```bash
+# Set chat history provider
+dotnet user-secrets set "ChatHistory:Provider" "sqlite"
+
+# Configure SQLite connection (if using SQLite)
+dotnet user-secrets set "SQLite:ConnectionString" "Data Source=/data/partnership-agent.db;Cache=Shared"
+
+# Configure Azure SQL connection (if using Azure SQL)
+dotnet user-secrets set "AzureSQL:ConnectionString" "your-azure-sql-connection-string"
+```
+
+### Runtime Chat History Switching
+
+You can also switch providers at runtime by modifying `appsettings.json`:
+
+```json
+{
+  "ChatHistory": {
+    "Provider": "sqlite"  // "inmemory", "sqlite", or "azuresql"
+  },
+  "SQLite": {
+    "ConnectionString": "Data Source=/data/partnership-agent.db;Cache=Shared"
+  }
+}
+```
+
 ## 🚦 Getting Started Steps
 
 1. **Clone the repository**
-2. **Run the preferred setup**: `./setup/setup.sh` (or `setup.cmd` on Windows)
+2. **Choose your chat history option**:
+   - `./setup/setup.sh` (InMemory - fastest setup)
+   - `./setup/setup.sh sqlite` (SQLite - persistent, local)
+   - `./setup/setup.sh azuresql` (Azure SQL - production-ready)
 3. **Test with sample queries** about revenue sharing, compliance, or termination procedures
 4. **Explore the citation responses** to see precise document references
-5. **Try the console app** for interactive testing
+5. **Try the console app** for interactive testing with persistent chat history
 
 ## 🤝 Contributing
 

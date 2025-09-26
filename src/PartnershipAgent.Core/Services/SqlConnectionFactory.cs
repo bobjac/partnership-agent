@@ -1,5 +1,6 @@
 ﻿using Microsoft.Data.SqlClient;
 using System;
+using System.Data.Common;
 
 namespace PartnershipAgent.Core.Services;
 
@@ -16,7 +17,7 @@ public class SqlConnectionFactory : ISqlConnectionFactory
         _connectionString = connectionString;
     }
 
-    public SqlConnection CreateConnection()
+    public DbConnection CreateConnection()
     {
         return new SqlConnection(_connectionString);
     }

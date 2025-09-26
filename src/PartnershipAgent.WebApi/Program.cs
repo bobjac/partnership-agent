@@ -101,9 +101,6 @@ var elasticSearchUri = builder.Configuration["ElasticSearch:Uri"] ?? "http://loc
 var elasticUsername = builder.Configuration["ElasticSearch:Username"];
 var elasticPassword = builder.Configuration["ElasticSearch:Password"];
 
-var azureSQLConnectionString = builder.Configuration.GetConnectionString("AzureSQL")
-    ?? Environment.GetEnvironmentVariable("AzureSQL")
-    ?? throw new InvalidOperationException("Azure SQL Connection String not found in configuration or environment variables");
 
 builder.Services.AddScoped<IKernelBuilder>(provider =>
 {
@@ -176,14 +173,37 @@ builder.Services.AddScoped<FAQAgent>(provider =>
 builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
 builder.Services.AddScoped<ICitationService, CitationService>();
 
-// Register SQL Connection Factory Service
-builder.Services.AddSingleton<ISqlConnectionFactory>(sp =>
-{
-    return new SqlConnectionFactory(azureSQLConnectionString);
-});
+// Configure Chat History Service based on provider
+var chatHistoryProvider = builder.Configuration["ChatHistory:Provider"] ?? "InMemory";
 
-// Register Chat History Service
-builder.Services.AddScoped<IChatHistoryService, AzureSqlChatHistoryService>();
+switch (chatHistoryProvider.ToLowerInvariant())
+{
+    case "azuresql":
+        var azureSQLConnectionString = builder.Configuration["AzureSQL:ConnectionString"] 
+            ?? Environment.GetEnvironmentVariable("AZURESQL_CONNECTION_STRING")
+            ?? throw new InvalidOperationException("Azure SQL Connection String not found in configuration or environment variables");
+        
+        builder.Services.AddSingleton<ISqlConnectionFactory>(sp => new SqlConnectionFactory(azureSQLConnectionString));
+        builder.Services.AddScoped<IChatHistoryService, AzureSqlChatHistoryService>();
+        Console.WriteLine("[CHAT HISTORY] Using Azure SQL provider");
+        break;
+        
+    case "sqlite":
+        var sqliteConnectionString = builder.Configuration["SQLite:ConnectionString"] 
+            ?? Environment.GetEnvironmentVariable("SQLITE_CONNECTION_STRING")
+            ?? "Data Source=/data/partnership-agent.db;Cache=Shared";
+        
+        builder.Services.AddSingleton<ISqlConnectionFactory>(sp => new SqliteConnectionFactory(sqliteConnectionString));
+        builder.Services.AddScoped<IChatHistoryService, SqliteChatHistoryService>();
+        Console.WriteLine($"[CHAT HISTORY] Using SQLite provider with connection: {sqliteConnectionString}");
+        break;
+        
+    case "inmemory":
+    default:
+        builder.Services.AddScoped<IChatHistoryService, InMemoryChatHistoryService>();
+        Console.WriteLine("[CHAT HISTORY] Using InMemory provider");
+        break;
+}
 
 // Register the response channel
 builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalChannel>();

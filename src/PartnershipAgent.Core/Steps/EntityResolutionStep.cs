@@ -77,7 +77,12 @@ public class EntityResolutionStep : KernelProcessStep
             await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.User, agentMessage));
             var chatMessages = await _chatHistoryService.GetChatHistoryAsync(processModel.ThreadId);
             var responseList = await _entityResolutionAgent.InvokeAsync(chatMessages).ToListAsync();
-            var lastMessage = responseList.Last(m => m.Role == AuthorRole.Assistant).Content;
+            var assistantMessage = responseList.LastOrDefault(m => m.Role == AuthorRole.Assistant);
+            var lastMessage = assistantMessage != null ? assistantMessage.Content : string.Empty;
+            if (assistantMessage == null)
+            {
+                _logger.LogWarning("No assistant message found in responseList for session {ThreadId}", processModel.ThreadId);
+            }
             await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.Assistant, lastMessage));
 
             // Evaluate the entity extraction response if evaluator is available

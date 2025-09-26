@@ -9,6 +9,8 @@ public class SqlConnectionFactory : ISqlConnectionFactory
 
     public SqlConnectionFactory(string connectionString)
     {
+        if (connectionString == null)
+            throw new ArgumentNullException(nameof(connectionString));
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new ArgumentException("Connection string cannot be null or empty.", nameof(connectionString));
         _connectionString = connectionString;

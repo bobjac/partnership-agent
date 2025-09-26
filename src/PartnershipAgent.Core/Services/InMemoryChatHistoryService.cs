@@ -10,14 +10,24 @@ namespace PartnershipAgent.Core.Services;
 
 public class InMemoryChatHistoryService : IChatHistoryService
 {
-    private ChatHistory chatMessages = new ChatHistory();
+    private readonly Dictionary<Guid, ChatHistory> chatHistories = new Dictionary<Guid, ChatHistory>();
     public async Task AddMessageToChatHistoryAsync(Guid thread_id, ChatMessageContent chatMessage)
     {
-        chatMessages.Add(chatMessage);
+        if (!chatHistories.ContainsKey(thread_id))
+        {
+            chatHistories[thread_id] = new ChatHistory();
+        }
+        chatHistories[thread_id].Add(chatMessage);
+        await Task.CompletedTask;
     }
 
     public async Task<ChatHistory> GetChatHistoryAsync(Guid thread_id)
     {
-        return chatMessages;
+        if (chatHistories.TryGetValue(thread_id, out var chatHistory))
+        {
+            return await Task.FromResult(chatHistory);
+        }
+        var emptyChatHistory = new ChatHistory();
+        return await Task.FromResult(emptyChatHistory);
     }
 }

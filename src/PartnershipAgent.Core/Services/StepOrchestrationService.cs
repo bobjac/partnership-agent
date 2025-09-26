@@ -8,6 +8,7 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Process;
 using PartnershipAgent.Core.Agents;
+using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Models;
 using PartnershipAgent.Core.Steps;
 
@@ -25,6 +26,7 @@ public class StepOrchestrationService
     private readonly Kernel _kernel;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<StepOrchestrationService> _logger;
+    private readonly IAssistantResponseEvaluator? _evaluator;
 
     /// <summary>
     /// Constructor for StepOrchestrationService.
@@ -32,11 +34,13 @@ public class StepOrchestrationService
     public StepOrchestrationService(
         Kernel kernel,
         IServiceProvider serviceProvider,
-        ILogger<StepOrchestrationService> logger)
+        ILogger<StepOrchestrationService> logger,
+        IAssistantResponseEvaluator? evaluator = null)
     {
         _kernel = kernel ?? throw new ArgumentNullException(nameof(kernel));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _evaluator = evaluator;
     }
 
     /// <summary>
@@ -104,8 +108,29 @@ public class StepOrchestrationService
             // Get the final response from the collector
             var responseCollector = _serviceProvider.GetRequiredService<ProcessResponseCollector>();
             var finalResponse = responseCollector.GetAndRemoveResponse(processModel.ThreadId);
+            var chatResponse = finalResponse ?? CreateChatResponse(request, processModel);
             
-            return finalResponse ?? CreateChatResponse(request, processModel);
+            // Evaluate the response if evaluator is available
+            if (_evaluator != null && !string.IsNullOrWhiteSpace(chatResponse.Response))
+            {
+                try
+                {
+                    _ = await _evaluator.EvaluateAndLogAsync(
+                        userPrompt: request.Prompt,
+                        response: chatResponse.Response,
+                        module: "PartnershipAgent",
+                        parentActivity: _activitySource,
+                        expectedAnswer: null
+                    );
+                }
+                catch (Exception evalEx)
+                {
+                    _logger.LogWarning(evalEx, "Failed to evaluate response for session {ThreadId}", processModel.ThreadId);
+                    // Continue without failing the request
+                }
+            }
+            
+            return chatResponse;
         }
         catch (Exception ex)
         {

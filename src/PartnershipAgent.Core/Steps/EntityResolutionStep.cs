@@ -9,6 +9,7 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using PartnershipAgent.Core.Agents;
+using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Models;
 using PartnershipAgent.Core.Services;
 
@@ -25,6 +26,7 @@ public class EntityResolutionStep : KernelProcessStep
     private readonly IBidirectionalToClientChannel _responseChannel;
     private readonly IChatHistoryService _chatHistoryService;
     private readonly ILogger<EntityResolutionStep> _logger;
+    private readonly IAssistantResponseEvaluator? _evaluator;
 
     /// <summary>
     /// Constructor for EntityResolutionStep.
@@ -36,12 +38,14 @@ public class EntityResolutionStep : KernelProcessStep
         EntityResolutionAgent entityResolutionAgent,
         IBidirectionalToClientChannel responseChannel,
         IChatHistoryService chatHistoryService,
-        ILogger<EntityResolutionStep> logger)
+        ILogger<EntityResolutionStep> logger,
+        IAssistantResponseEvaluator? evaluator = null)
     {
         _entityResolutionAgent = entityResolutionAgent ?? throw new ArgumentNullException(nameof(entityResolutionAgent));
         _responseChannel = responseChannel ?? throw new ArgumentNullException(nameof(responseChannel));
         _chatHistoryService = chatHistoryService ?? throw new ArgumentNullException(nameof(chatHistoryService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _evaluator = evaluator;
     }
 
     /// <summary>
@@ -74,9 +78,48 @@ public class EntityResolutionStep : KernelProcessStep
             var chatMessages = await _chatHistoryService.GetChatHistoryAsync(processModel.ThreadId);
             var responseList = await _entityResolutionAgent.InvokeAsync(chatMessages).ToListAsync();
             var lastMessage = responseList.Last(m => m.Role == AuthorRole.Assistant).Content;
-            var assistantResponse = new ChatMessageContent(AuthorRole.Assistant, lastMessage);
-            await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, assistantResponse);
-            var entityResolutionResponse = JsonSerializer.Deserialize<EntityResolutionResponse>(lastMessage, new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
+            await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.Assistant, lastMessage));
+
+            // Evaluate the entity extraction response if evaluator is available
+            if (_evaluator != null && !string.IsNullOrWhiteSpace(lastMessage))
+            {
+                try
+                {
+                    using var activity = System.Diagnostics.Activity.Current?.Source?.StartActivity("EntityResolution Evaluation");
+                    _ = await _evaluator.EvaluateAndLogAsync(
+                        userPrompt: processModel.Input,
+                        response: lastMessage,
+                        module: "EntityResolutionAgent",
+                        parentActivity: activity?.Source,
+                        expectedAnswer: null
+                    );
+                }
+                catch (Exception evalEx)
+                {
+                    _logger.LogWarning(evalEx, "Failed to evaluate entity resolution response for session {ThreadId}", processModel.ThreadId);
+                    // Continue without failing the request
+                }
+            }
+
+            EntityResolutionResponse entityResolutionResponse = null;
+            if (!string.IsNullOrWhiteSpace(lastMessage))
+            {
+                try
+                {
+                    entityResolutionResponse = JsonSerializer.Deserialize<EntityResolutionResponse>(
+                        lastMessage,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                    );
+                }
+                catch (JsonException jsonEx)
+                {
+                    _logger.LogWarning(jsonEx, "Failed to deserialize entity resolution response for session {ThreadId}. Content: {Content}", processModel.ThreadId, lastMessage);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Unexpected error during deserialization of entity resolution response for session {ThreadId}. Content: {Content}", processModel.ThreadId, lastMessage);
+                }
+            }
 
             // Extract entities from the structured response
             var entities = new List<ExtractedEntity>();

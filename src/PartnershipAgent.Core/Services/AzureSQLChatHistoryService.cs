@@ -74,7 +74,7 @@ public class AzureSQLChatHistoryService : IChatHistoryService
                 role: ParseAuthorRole(reader.GetString(1)),
                 content: reader.IsDBNull(2) ? null : reader.GetString(2),
                 modelId: reader.IsDBNull(3) ? null : reader.GetString(3),
-                innerContent: reader.IsDBNull(4) ? null : JsonSerializer.Deserialize<object>(reader.GetString(4)),
+                innerContent: reader.IsDBNull(4) ? null : JsonSerializer.Deserialize<JsonElement>(reader.GetString(4)),
                 metadata: reader.IsDBNull(5) ? null : JsonSerializer.Deserialize<Dictionary<string, object?>>(reader.GetString(5))
             ));
         }

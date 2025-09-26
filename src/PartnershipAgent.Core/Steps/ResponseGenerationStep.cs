@@ -4,9 +4,11 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Models;
+using PartnershipAgent.Core.Services;
 
 #pragma warning disable SKEXP0080
 
@@ -19,6 +21,7 @@ public class ResponseGenerationStep : KernelProcessStep
 {
     private readonly FAQAgent _faqAgent;
     private readonly IBidirectionalToClientChannel _responseChannel;
+    private readonly IChatHistoryService _chatHistoryService;
     private readonly ILogger<ResponseGenerationStep> _logger;
     private readonly IAssistantResponseEvaluator? _evaluator;
 
@@ -30,12 +33,14 @@ public class ResponseGenerationStep : KernelProcessStep
     /// <param name="logger">Logger instance for this step</param>
     public ResponseGenerationStep(
         FAQAgent faqAgent,
-        IBidirectionalToClientChannel responseChannel, 
+        IBidirectionalToClientChannel responseChannel,
+        IChatHistoryService chatHistoryService,
         ILogger<ResponseGenerationStep> logger,
         IAssistantResponseEvaluator? evaluator = null)
     {
         _faqAgent = faqAgent ?? throw new ArgumentNullException(nameof(faqAgent));
         _responseChannel = responseChannel ?? throw new ArgumentNullException(nameof(responseChannel));
+        _chatHistoryService = chatHistoryService ?? throw new ArgumentNullException(nameof(chatHistoryService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _evaluator = evaluator;
     }
@@ -63,6 +68,7 @@ public class ResponseGenerationStep : KernelProcessStep
             var structuredResponse = await _faqAgent.GenerateStructuredResponseAsync(processModel.Input, processModel.RelevantDocuments);
             processModel.GeneratedResponse = structuredResponse;
             processModel.FinalResponse = structuredResponse.Answer;
+            await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.Assistant, processModel.FinalResponse));
 
             _logger.LogInformation("Generated response with confidence {Confidence} for session {ThreadId}", 
                 structuredResponse.ConfidenceLevel, processModel.ThreadId);

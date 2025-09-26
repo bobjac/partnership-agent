@@ -1,5 +1,3 @@
-using System;
-using System.Net.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +15,8 @@ using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Services;
 using PartnershipAgent.Core.Steps;
+using System;
+using System.Net.Http;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using Azure.AI.OpenAI;
@@ -101,6 +101,10 @@ var elasticSearchUri = builder.Configuration["ElasticSearch:Uri"] ?? "http://loc
 var elasticUsername = builder.Configuration["ElasticSearch:Username"];
 var elasticPassword = builder.Configuration["ElasticSearch:Password"];
 
+var azureSQLConnectionString = builder.Configuration.GetConnectionString("AzureSQL")
+    ?? Environment.GetEnvironmentVariable("AzureSQL")
+    ?? throw new InvalidOperationException("Azure SQL Connection String not found in configuration or environment variables");
+
 builder.Services.AddScoped<IKernelBuilder>(provider =>
 {
     var kernelBuilder = Kernel.CreateBuilder();
@@ -160,16 +164,26 @@ builder.Services.AddScoped<FAQAgent>(provider =>
     var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
     var elasticSearchService = provider.GetRequiredService<IElasticSearchService>();
     var citationService = provider.GetRequiredService<ICitationService>();
+    var chatHistoryService = provider.GetRequiredService<IChatHistoryService>();
     var logger = provider.GetRequiredService<ILogger<FAQAgent>>();
     
     // Create a simple IRequestedBy implementation for this context
     var requestedBy = new SimpleRequestedBy();
     var ThreadId = Guid.NewGuid();
     
-    return new FAQAgent(ThreadId, kernelBuilder, elasticSearchService, citationService, requestedBy, logger);
+    return new FAQAgent(ThreadId, kernelBuilder, elasticSearchService, citationService, chatHistoryService, requestedBy, logger);
 });
 builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
 builder.Services.AddScoped<ICitationService, CitationService>();
+
+// Register SQL Connection Factory Service
+builder.Services.AddSingleton<ISqlConnectionFactory>(sp =>
+{
+    return new SqlConnectionFactory(azureSQLConnectionString);
+});
+
+// Register Chat History Service
+builder.Services.AddScoped<IChatHistoryService, AzureSqlChatHistoryService>();
 
 // Register the response channel
 builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalChannel>();

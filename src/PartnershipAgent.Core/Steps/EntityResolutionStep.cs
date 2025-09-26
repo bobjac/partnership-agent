@@ -11,6 +11,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Models;
+using PartnershipAgent.Core.Services;
 
 #pragma warning disable SKEXP0080
 
@@ -23,6 +24,7 @@ public class EntityResolutionStep : KernelProcessStep
 {
     private readonly EntityResolutionAgent _entityResolutionAgent;
     private readonly IBidirectionalToClientChannel _responseChannel;
+    private readonly IChatHistoryService _chatHistoryService;
     private readonly ILogger<EntityResolutionStep> _logger;
     private readonly IAssistantResponseEvaluator? _evaluator;
 
@@ -34,12 +36,14 @@ public class EntityResolutionStep : KernelProcessStep
     /// <param name="logger">Logger instance for this step</param>
     public EntityResolutionStep(
         EntityResolutionAgent entityResolutionAgent,
-        IBidirectionalToClientChannel responseChannel, 
+        IBidirectionalToClientChannel responseChannel,
+        IChatHistoryService chatHistoryService,
         ILogger<EntityResolutionStep> logger,
         IAssistantResponseEvaluator? evaluator = null)
     {
         _entityResolutionAgent = entityResolutionAgent ?? throw new ArgumentNullException(nameof(entityResolutionAgent));
         _responseChannel = responseChannel ?? throw new ArgumentNullException(nameof(responseChannel));
+        _chatHistoryService = chatHistoryService ?? throw new ArgumentNullException(nameof(chatHistoryService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _evaluator = evaluator;
     }
@@ -70,10 +74,17 @@ public class EntityResolutionStep : KernelProcessStep
                 Please analyze this text and extract relevant entities focusing on partnership and business terminology.
                 """;
 
-            var chatMessages = new List<ChatMessageContent> { new(AuthorRole.User, agentMessage) };
+            await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.User, agentMessage));
+            var chatMessages = await _chatHistoryService.GetChatHistoryAsync(processModel.ThreadId);
             var responseList = await _entityResolutionAgent.InvokeAsync(chatMessages).ToListAsync();
-            var lastMessage = responseList.Last(m => m.Message.Role == AuthorRole.Assistant).Message.Content;
-            
+            var assistantMessage = responseList.LastOrDefault(m => m.Role == AuthorRole.Assistant);
+            var lastMessage = assistantMessage != null ? assistantMessage.Content : string.Empty;
+            if (assistantMessage == null)
+            {
+                _logger.LogWarning("No assistant message found in responseList for session {ThreadId}", processModel.ThreadId);
+            }
+            await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.Assistant, lastMessage));
+
             // Evaluate the entity extraction response if evaluator is available
             if (_evaluator != null && !string.IsNullOrWhiteSpace(lastMessage))
             {

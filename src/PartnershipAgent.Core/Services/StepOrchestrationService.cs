@@ -80,6 +80,7 @@ public class StepOrchestrationService
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<EntityResolutionAgent>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<FAQAgent>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IBidirectionalToClientChannel>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IChatHistoryService>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ProcessResponseCollector>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<EntityResolutionStep>>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<DocumentSearchStep>>());

@@ -20,6 +20,9 @@ dotnet user-secrets set "AzureOpenAI:DeploymentName" "gpt-35-turbo"
 dotnet user-secrets set "ElasticSearch:Username" "your-username"
 dotnet user-secrets set "ElasticSearch:Password" "your-password"
 dotnet user-secrets set "ElasticSearch:Uri" "https://your-elastic-cluster.com:9243"
+
+# Set Azure SQL credentials
+dotnet user-secrets set "ConnectionStrings:AzureSQL" "Server=tcp:<your-server>.database.windows.net,1433;Initial Catalog=<your-db>;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Default;Connection Timeout=30;"
 ```
 
 ### View stored secrets:

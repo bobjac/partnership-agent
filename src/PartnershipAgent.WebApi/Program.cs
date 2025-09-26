@@ -176,12 +176,14 @@ builder.Services.AddScoped<FAQAgent>(provider =>
 builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
 builder.Services.AddScoped<ICitationService, CitationService>();
 
+// Register SQL Connection Factory Service
+builder.Services.AddSingleton<ISqlConnectionFactory>(sp =>
+{
+    return new SqlConnectionFactory(azureSQLConnectionString);
+}); ;
 
 // Register Chat History Service
-builder.Services.AddSingleton<IChatHistoryService>(sp =>
-{
-    return new AzureSQLChatHistoryService(azureSQLConnectionString);
-});
+builder.Services.AddScoped<IChatHistoryService, AzureSqlChatHistoryService>();
 
 // Register the response channel
 builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalChannel>();

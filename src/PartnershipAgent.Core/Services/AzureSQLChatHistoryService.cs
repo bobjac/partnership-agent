@@ -11,27 +11,19 @@ using System.Threading.Tasks;
 
 namespace PartnershipAgent.Core.Services;
 
-public class AzureSQLChatHistoryService : IChatHistoryService
+public class AzureSqlChatHistoryService : IChatHistoryService
 {
-    private readonly SqlConnection _connection;
+    private readonly ISqlConnectionFactory _sqlConnectionFactory;
 
-    public AzureSQLChatHistoryService(string connectionString)
+    public AzureSqlChatHistoryService(ISqlConnectionFactory sqlConnectionFactory)
     {
-        _connection = new SqlConnection(connectionString);
-    }
-
-    // Open the connection once (or per method)
-    private async Task EnsureOpenAsync()
-    {
-        if (_connection.State != System.Data.ConnectionState.Open)
-        {
-            await _connection.OpenAsync();
-        }
+        _sqlConnectionFactory = sqlConnectionFactory;
     }
 
     public async Task AddMessageToChatHistoryAsync(Guid thread_id, ChatMessageContent chatMessage)
     {
-        await EnsureOpenAsync();
+        await using var connection = _sqlConnectionFactory.CreateConnection();
+        await connection.OpenAsync();
 
         string query = @"
             INSERT INTO ChatMessages
@@ -39,7 +31,7 @@ public class AzureSQLChatHistoryService : IChatHistoryService
             VALUES
             (@Id, @ThreadId, @Role, @Content, @ModelId, @InnerContentJson, @MetadataJson, @DateInserted)";
 
-        await using var command = new SqlCommand(query, _connection);
+        await using var command = new SqlCommand(query, connection);
         command.Parameters.AddWithValue("@Id", Guid.NewGuid());
         command.Parameters.AddWithValue("@ThreadId", thread_id);
         command.Parameters.AddWithValue("@Role", chatMessage.Role.ToString());
@@ -54,7 +46,8 @@ public class AzureSQLChatHistoryService : IChatHistoryService
     
     public async Task<ChatHistory> GetChatHistoryAsync(Guid thread_id)
     {
-        await EnsureOpenAsync();
+        await using var connection = _sqlConnectionFactory.CreateConnection();
+        await connection.OpenAsync();
 
         var messages = new List<ChatMessageContent>();
 
@@ -64,7 +57,7 @@ public class AzureSQLChatHistoryService : IChatHistoryService
         WHERE ThreadId = @ThreadId
         ORDER BY DateInserted ASC"; // earliest to latest
 
-        await using var command = new SqlCommand(query, _connection);
+        await using var command = new SqlCommand(query, connection);
         command.Parameters.AddWithValue("@ThreadId", thread_id);
         await using var reader = await command.ExecuteReaderAsync();
 

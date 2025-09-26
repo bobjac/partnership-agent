@@ -38,6 +38,25 @@ public class CrossPlatformSetup
             Console.WriteLine($"Platform: {RuntimeInformation.OSDescription}");
             Console.WriteLine($"Project root: {_projectRoot}");
 
+            // Parse command line arguments
+            string chatHistoryProvider = "inmemory"; // default
+            if (args.Length > 0)
+            {
+                if (args[0] == "--help" || args[0] == "-h")
+                {
+                    Console.WriteLine("\nUsage: dotnet run [chat-history-provider]");
+                    Console.WriteLine("Options:");
+                    Console.WriteLine("  inmemory  - Use in-memory chat history (default, no persistence)");
+                    Console.WriteLine("  sqlite    - Use SQLite with Docker container (persistent)");
+                    Console.WriteLine("  azuresql  - Use Azure SQL Database (persistent, requires Azure setup)");
+                    Console.WriteLine("\nExample: dotnet run sqlite");
+                    return 0;
+                }
+                chatHistoryProvider = args[0].ToLowerInvariant();
+            }
+
+            Console.WriteLine($"💾 Chat History Provider: {chatHistoryProvider}");
+
             // Step 1: Check prerequisites
             if (!await CheckPrerequisites())
                 return 1;
@@ -63,8 +82,15 @@ public class CrossPlatformSetup
             if (!await SetupElasticsearchData())
                 return 1;
 
+            // Step 5.5: Setup SQLite if requested
+            if (chatHistoryProvider == "sqlite")
+            {
+                if (!await SetupSQLite())
+                    return 1;
+            }
+
             // Step 6: Configure user secrets
-            if (!await ConfigureUserSecrets())
+            if (!await ConfigureUserSecrets(chatHistoryProvider))
                 return 1;
 
             // Step 7: Build solution
@@ -76,6 +102,13 @@ public class CrossPlatformSetup
 
             Console.WriteLine("\n🎉 Setup completed successfully!");
             Console.WriteLine("\nSummary:");
+            Console.WriteLine($"• Chat History Provider: {chatHistoryProvider}");
+            if (chatHistoryProvider == "sqlite")
+            {
+                Console.WriteLine("• SQLite Container: partnership-agent-sqlite (running)");
+                Console.WriteLine("• SQLite Database: /data/partnership-agent.db");
+                Console.WriteLine("• SQLite Volume: partnership-agent-sqlite-data");
+            }
             Console.WriteLine($"• Elasticsearch: {ElasticCredentials.Uri}");
             if (!string.IsNullOrEmpty(ElasticCredentials.Username))
             {
@@ -316,7 +349,61 @@ public class CrossPlatformSetup
         return true;
     }
 
-    private static async Task<bool> ConfigureUserSecrets()
+    private static async Task<bool> SetupSQLite()
+    {
+        Console.WriteLine("\n💾 Setting up SQLite container...");
+
+        // Check if Docker is available
+        if (!await RunCommand("docker", "--version", outputToConsole: false))
+        {
+            Console.WriteLine("❌ Docker is required for SQLite setup but not found");
+            return false;
+        }
+
+        // Stop any existing SQLite container
+        Console.WriteLine("🛑 Stopping existing SQLite container...");
+        await RunCommand("docker", "stop partnership-agent-sqlite", outputToConsole: false);
+        await RunCommand("docker", "rm partnership-agent-sqlite", outputToConsole: false);
+
+        // Build SQLite container
+        Console.WriteLine("🔨 Building SQLite container...");
+        var dockerDir = Path.Combine(_projectRoot, "docker");
+        if (!await RunCommand("docker", "build -t partnership-agent-sqlite sqlite/", 
+            workingDirectory: dockerDir))
+        {
+            Console.WriteLine("❌ Failed to build SQLite container");
+            return false;
+        }
+
+        // Start SQLite container
+        Console.WriteLine("🚀 Starting SQLite container...");
+        if (!await RunCommand("docker", "run -d --name partnership-agent-sqlite -v partnership-agent-sqlite-data:/data partnership-agent-sqlite", 
+            workingDirectory: dockerDir))
+        {
+            Console.WriteLine("❌ Failed to start SQLite container");
+            return false;
+        }
+
+        // Wait for container to be ready
+        Console.WriteLine("⏳ Waiting for SQLite container to initialize...");
+        await Task.Delay(3000);
+
+        // Verify container is running
+        if (!await RunCommand("docker", "ps --filter name=partnership-agent-sqlite --format \"table {{.Names}}\\t{{.Status}}\""))
+        {
+            Console.WriteLine("❌ SQLite container failed to start properly");
+            return false;
+        }
+
+        Console.WriteLine("✅ SQLite container setup complete");
+        Console.WriteLine("   • Container: partnership-agent-sqlite");
+        Console.WriteLine("   • Volume: partnership-agent-sqlite-data");
+        Console.WriteLine("   • Database: /data/partnership-agent.db");
+        
+        return true;
+    }
+
+    private static async Task<bool> ConfigureUserSecrets(string chatHistoryProvider)
     {
         Console.WriteLine("\n🔐 Configuring user secrets...");
         
@@ -339,6 +426,21 @@ public class CrossPlatformSetup
         {
             Console.WriteLine("Setting Elasticsearch Password: ********");
             if (!await RunCommand("dotnet", $"user-secrets set \"ElasticSearch:Password\" \"{ElasticCredentials.Password}\"", 
+                workingDirectory: webApiDir))
+                return false;
+        }
+
+        // Configure chat history provider
+        Console.WriteLine($"Setting Chat History Provider: {chatHistoryProvider}");
+        if (!await RunCommand("dotnet", $"user-secrets set \"ChatHistory:Provider\" \"{chatHistoryProvider}\"", 
+            workingDirectory: webApiDir))
+            return false;
+
+        // Configure SQLite connection string if using SQLite
+        if (chatHistoryProvider == "sqlite")
+        {
+            Console.WriteLine("Setting SQLite Connection String");
+            if (!await RunCommand("dotnet", $"user-secrets set \"SQLite:ConnectionString\" \"Data Source=/data/partnership-agent.db;Cache=Shared\"", 
                 workingDirectory: webApiDir))
                 return false;
         }

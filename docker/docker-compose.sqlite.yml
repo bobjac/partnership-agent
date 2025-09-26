@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  sqlite:
+    build:
+      context: ./sqlite
+      dockerfile: Dockerfile
+    container_name: partnership-agent-sqlite
+    volumes:
+      - sqlite_data:/data
+    ports:
+      # SQLite doesn't need ports, but we expose this for health checks
+      - "3307:3307"
+    environment:
+      - SQLITE_DATABASE=/data/partnership-agent.db
+    restart: unless-stopped
+
+volumes:
+  sqlite_data:
+    driver: local

@@ -1,22 +1,18 @@
-﻿using Microsoft.Data.SqlClient;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
-using System.Linq;
-using System.Text;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace PartnershipAgent.Core.Services;
 
-public class AzureSqlChatHistoryService : IChatHistoryService
+public class SqliteChatHistoryService : IChatHistoryService
 {
     private readonly ISqlConnectionFactory _sqlConnectionFactory;
 
-    public AzureSqlChatHistoryService(ISqlConnectionFactory sqlConnectionFactory)
+    public SqliteChatHistoryService(ISqlConnectionFactory sqlConnectionFactory)
     {
         _sqlConnectionFactory = sqlConnectionFactory;
     }
@@ -61,11 +57,12 @@ public class AzureSqlChatHistoryService : IChatHistoryService
         SELECT Id, Role, Content, ModelId, InnerContentJson, MetadataJson, DateInserted
         FROM ChatMessages
         WHERE ThreadId = @ThreadId
-        ORDER BY DateInserted ASC"; // earliest to latest
+        ORDER BY DateInserted ASC";
 
         await using var command = connection.CreateCommand();
         command.CommandText = query;
         command.Parameters.Add(CreateParameter(command, "@ThreadId", thread_id.ToString()));
+        
         await using var reader = await command.ExecuteReaderAsync();
 
         while (await reader.ReadAsync())

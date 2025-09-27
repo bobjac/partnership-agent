@@ -400,7 +400,7 @@ namespace PartnershipAgent.WebApi.Controllers
                     value = documentsWithEmbeddings.Select(doc => new
                     {
                         doc,
-                        OperationType = "upload"
+                        ["@search.action"] = "upload"
                     }).ToArray()
                 };
                 

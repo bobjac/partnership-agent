@@ -73,25 +73,27 @@ public class ResponseGenerationStep : KernelProcessStep
             _logger.LogInformation("Generated response with confidence {Confidence} for session {ThreadId}", 
                 structuredResponse.ConfidenceLevel, processModel.ThreadId);
 
-            // Evaluate the response quality if evaluator is available
+            // Evaluate the response quality if evaluator is available (fire-and-forget for performance)
             if (_evaluator != null && !string.IsNullOrWhiteSpace(structuredResponse.Answer))
             {
-                try
+                _ = Task.Run(async () =>
                 {
-                    using var activity = System.Diagnostics.Activity.Current?.Source?.StartActivity("FAQAgent Evaluation");
-                    _ = await _evaluator.EvaluateAndLogAsync(
-                        userPrompt: processModel.Input,
-                        response: structuredResponse.Answer,
-                        module: "FAQAgent",
-                        parentActivity: activity?.Source,
-                        expectedAnswer: null
-                    );
-                }
-                catch (Exception evalEx)
-                {
-                    _logger.LogWarning(evalEx, "Failed to evaluate FAQ response for session {ThreadId}", processModel.ThreadId);
-                    // Continue without failing the request
-                }
+                    try
+                    {
+                        using var activity = System.Diagnostics.Activity.Current?.Source?.StartActivity("FAQAgent Evaluation");
+                        _ = await _evaluator.EvaluateAndLogAsync(
+                            userPrompt: processModel.Input,
+                            response: structuredResponse.Answer,
+                            module: "FAQAgent",
+                            parentActivity: activity?.Source,
+                            expectedAnswer: null
+                        );
+                    }
+                    catch (Exception evalEx)
+                    {
+                        _logger.LogWarning(evalEx, "Failed to evaluate FAQ response for session {ThreadId}", processModel.ThreadId);
+                    }
+                });
             }
 
             // Send status update with response metadata

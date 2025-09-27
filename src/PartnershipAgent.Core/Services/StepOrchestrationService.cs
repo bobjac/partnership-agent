@@ -57,7 +57,7 @@ public class StepOrchestrationService
         
         var processModel = new ProcessModel
         {
-            ThreadId = Guid.Parse(request.ThreadId),
+            ThreadId = Guid.TryParse(request.ThreadId, out var threadGuid) ? threadGuid : Guid.NewGuid(),
             Input = request.Prompt,
             InitialPrompt = request.Prompt,
             UserId = request.UserId,
@@ -110,24 +110,26 @@ public class StepOrchestrationService
             var finalResponse = responseCollector.GetAndRemoveResponse(processModel.ThreadId);
             var chatResponse = finalResponse ?? CreateChatResponse(request, processModel);
             
-            // Evaluate the response if evaluator is available
+            // Evaluate the response if evaluator is available (fire-and-forget for performance)
             if (_evaluator != null && !string.IsNullOrWhiteSpace(chatResponse.Response))
             {
-                try
+                _ = Task.Run(async () =>
                 {
-                    _ = await _evaluator.EvaluateAndLogAsync(
-                        userPrompt: request.Prompt,
-                        response: chatResponse.Response,
-                        module: "PartnershipAgent",
-                        parentActivity: _activitySource,
-                        expectedAnswer: null
-                    );
-                }
-                catch (Exception evalEx)
-                {
-                    _logger.LogWarning(evalEx, "Failed to evaluate response for session {ThreadId}", processModel.ThreadId);
-                    // Continue without failing the request
-                }
+                    try
+                    {
+                        _ = await _evaluator.EvaluateAndLogAsync(
+                            userPrompt: request.Prompt,
+                            response: chatResponse.Response,
+                            module: "PartnershipAgent",
+                            parentActivity: _activitySource,
+                            expectedAnswer: null
+                        );
+                    }
+                    catch (Exception evalEx)
+                    {
+                        _logger.LogWarning(evalEx, "Failed to evaluate response for session {ThreadId}", processModel.ThreadId);
+                    }
+                });
             }
             
             return chatResponse;

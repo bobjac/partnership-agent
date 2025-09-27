@@ -40,22 +40,36 @@ public class CrossPlatformSetup
 
             // Parse command line arguments
             string chatHistoryProvider = "inmemory"; // default
-            if (args.Length > 0)
+            bool useVectorSearch = false;
+            
+            for (int i = 0; i < args.Length; i++)
             {
-                if (args[0] == "--help" || args[0] == "-h")
+                if (args[i] == "--help" || args[i] == "-h")
                 {
-                    Console.WriteLine("\nUsage: dotnet run [chat-history-provider]");
+                    Console.WriteLine("\nUsage: dotnet run [chat-history-provider] [--vector-search]");
                     Console.WriteLine("Options:");
                     Console.WriteLine("  inmemory  - Use in-memory chat history (default, no persistence)");
                     Console.WriteLine("  sqlite    - Use SQLite with Docker container (persistent)");
                     Console.WriteLine("  azuresql  - Use Azure SQL Database (persistent, requires Azure setup)");
-                    Console.WriteLine("\nExample: dotnet run sqlite");
+                    Console.WriteLine("  --vector-search - Enable high-performance vector search using Azure AI Search");
+                    Console.WriteLine("\nExamples:");
+                    Console.WriteLine("  dotnet run sqlite");
+                    Console.WriteLine("  dotnet run inmemory --vector-search");
+                    Console.WriteLine("  dotnet run sqlite --vector-search");
                     return 0;
                 }
-                chatHistoryProvider = args[0].ToLowerInvariant();
+                else if (args[i] == "--vector-search")
+                {
+                    useVectorSearch = true;
+                }
+                else if (i == 0) // First argument is chat history provider
+                {
+                    chatHistoryProvider = args[i].ToLowerInvariant();
+                }
             }
 
             Console.WriteLine($"💾 Chat History Provider: {chatHistoryProvider}");
+            Console.WriteLine($"🔍 Vector Search: {(useVectorSearch ? "Azure AI Search (High Performance)" : "Elasticsearch (Traditional)")}");
 
             // Step 1: Check prerequisites
             if (!await CheckPrerequisites())
@@ -90,7 +104,7 @@ public class CrossPlatformSetup
             }
 
             // Step 6: Configure user secrets
-            if (!await ConfigureUserSecrets(chatHistoryProvider))
+            if (!await ConfigureUserSecrets(chatHistoryProvider, useVectorSearch))
                 return 1;
 
             // Step 7: Build solution
@@ -109,16 +123,31 @@ public class CrossPlatformSetup
                 Console.WriteLine("• SQLite Database: /data/partnership-agent.db");
                 Console.WriteLine("• SQLite Volume: partnership-agent-sqlite-data");
             }
-            Console.WriteLine($"• Elasticsearch: {ElasticCredentials.Uri}");
-            if (!string.IsNullOrEmpty(ElasticCredentials.Username))
+            
+            if (useVectorSearch)
             {
-                Console.WriteLine($"• Username: {ElasticCredentials.Username}");
-                Console.WriteLine("• Password: ******** (configured in user secrets)");
+                Console.WriteLine("🚀 VECTOR SEARCH ENABLED - HIGH PERFORMANCE MODE");
+                Console.WriteLine("• Search Engine: Azure AI Search (vector-based)");
+                Console.WriteLine("• Performance: Sub-second document retrieval");
+                Console.WriteLine("• Technology: Text embeddings with semantic similarity");
+                Console.WriteLine("⚠️  NEXT STEPS: Configure Azure AI Search service manually");
+                Console.WriteLine("   See setup instructions above for required user secrets");
             }
             else
             {
-                Console.WriteLine("• Authentication: None (open instance)");
+                Console.WriteLine($"• Search Engine: Elasticsearch (traditional text search)");
+                Console.WriteLine($"• Elasticsearch: {ElasticCredentials.Uri}");
+                if (!string.IsNullOrEmpty(ElasticCredentials.Username))
+                {
+                    Console.WriteLine($"• Username: {ElasticCredentials.Username}");
+                    Console.WriteLine("• Password: ******** (configured in user secrets)");
+                }
+                else
+                {
+                    Console.WriteLine("• Authentication: None (open instance)");
+                }
             }
+            
             Console.WriteLine("• Index: partnership-documents");
             Console.WriteLine("• Documents: 8 with rich citation content");
             Console.WriteLine("• Citation functionality: Active");
@@ -403,7 +432,7 @@ public class CrossPlatformSetup
         return true;
     }
 
-    private static async Task<bool> ConfigureUserSecrets(string chatHistoryProvider)
+    private static async Task<bool> ConfigureUserSecrets(string chatHistoryProvider, bool useVectorSearch)
     {
         Console.WriteLine("\n🔐 Configuring user secrets...");
         
@@ -441,6 +470,42 @@ public class CrossPlatformSetup
         {
             Console.WriteLine("Setting SQLite Connection String");
             if (!await RunCommand("dotnet", $"user-secrets set \"SQLite:ConnectionString\" \"Data Source=/data/partnership-agent.db;Cache=Shared\"", 
+                workingDirectory: webApiDir))
+                return false;
+        }
+
+        // Configure Azure AI Search for vector search
+        if (useVectorSearch)
+        {
+            Console.WriteLine("📝 Configuring Azure AI Search for high-performance vector search...");
+            Console.WriteLine("⚠️ IMPORTANT: You need to configure Azure AI Search manually:");
+            Console.WriteLine("   1. Create an Azure AI Search service in the Azure portal");
+            Console.WriteLine("   2. Set the following user secrets with your Azure AI Search details:");
+            Console.WriteLine("");
+            Console.WriteLine("   dotnet user-secrets set \"AzureSearch:ServiceName\" \"your-search-service-name\"");
+            Console.WriteLine("   dotnet user-secrets set \"AzureSearch:ApiKey\" \"your-admin-api-key\"");
+            Console.WriteLine("   dotnet user-secrets set \"AzureSearch:UseVectorSearch\" \"true\"");
+            Console.WriteLine("");
+            Console.WriteLine("💡 Pro tip: Azure AI Search provides:");
+            Console.WriteLine("   • Sub-second document retrieval (vs 60+ seconds with Elasticsearch)");
+            Console.WriteLine("   • Semantic search with embeddings");
+            Console.WriteLine("   • Production-ready scaling and reliability");
+            Console.WriteLine("");
+            
+            // Set the flag to enable vector search
+            Console.WriteLine("Setting vector search flag...");
+            if (!await RunCommand("dotnet", $"user-secrets set \"AzureSearch:UseVectorSearch\" \"true\"", 
+                workingDirectory: webApiDir))
+                return false;
+                
+            Console.WriteLine("🔧 Azure AI Search configuration flag set");
+            Console.WriteLine("   To complete setup, configure your Azure AI Search service details");
+        }
+        else
+        {
+            // Ensure vector search is disabled
+            Console.WriteLine("Setting vector search to disabled (using Elasticsearch)");
+            if (!await RunCommand("dotnet", $"user-secrets set \"AzureSearch:UseVectorSearch\" \"false\"", 
                 workingDirectory: webApiDir))
                 return false;
         }

@@ -43,7 +43,7 @@ public class ElasticSearchService : IElasticSearchService
                         .Filter(f => f.Terms(t => t.Field(doc => doc.Category).Terms(allowedCategories)))
                     )
                 )
-                .Size(10)
+                .Size(5)
             );
 
             if (searchResponse.IsValid)

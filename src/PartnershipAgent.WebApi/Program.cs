@@ -211,6 +211,29 @@ builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalCha
 // Register the process response collector
 builder.Services.AddSingleton<ProcessResponseCollector>();
 
+// Register vector search services
+builder.Services.AddScoped<IVectorSearchService, AzureVectorSearchService>();
+builder.Services.AddScoped<DocumentIndexingService>();
+
+// Register search service based on configuration
+var useVectorSearch = builder.Configuration.GetValue<bool>("AzureSearch:UseVectorSearch", false);
+if (useVectorSearch)
+{
+    // Use vector search directly to avoid circular dependency
+    builder.Services.AddScoped<IElasticSearchService>(sp => 
+    {
+        var vectorSearchService = sp.GetRequiredService<IVectorSearchService>();
+        var logger = sp.GetRequiredService<ILogger<VectorSearchAdapter>>();
+        return new VectorSearchAdapter(vectorSearchService, logger);
+    });
+    Console.WriteLine("[SEARCH] Using high-performance Vector Search (Azure AI Search)");
+}
+else
+{
+    builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
+    Console.WriteLine("[SEARCH] Using traditional Elasticsearch");
+}
+
 // Register the individual step classes
 builder.Services.AddScoped<EntityResolutionStep>();
 builder.Services.AddScoped<DocumentSearchStep>();
@@ -219,6 +242,9 @@ builder.Services.AddScoped<UserResponseStep>();
 
 // Register the step orchestration service
 builder.Services.AddScoped<StepOrchestrationService>();
+
+// Register ground truth service
+builder.Services.AddSingleton<IGroundTruthService, GroundTruthService>();
 
 // Register evaluation services conditionally
 var evaluationEnabled = builder.Configuration.GetValue<bool>("Evaluation:Enabled", false);

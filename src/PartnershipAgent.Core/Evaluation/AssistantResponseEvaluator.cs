@@ -5,6 +5,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.AI.Evaluation;
 using Microsoft.Extensions.AI.Evaluation.Quality;
 using Microsoft.SemanticKernel;
+using PartnershipAgent.Core.Services;
 
 namespace PartnershipAgent.Core.Evaluation
 {
@@ -15,10 +16,12 @@ namespace PartnershipAgent.Core.Evaluation
     public class AssistantResponseEvaluator : IAssistantResponseEvaluator
     {
         private readonly Kernel _kernel;
+        private readonly IGroundTruthService _groundTruthService;
 
-        public AssistantResponseEvaluator(Kernel kernel)
+        public AssistantResponseEvaluator(Kernel kernel, IGroundTruthService groundTruthService)
         {
             _kernel = kernel;
+            _groundTruthService = groundTruthService;
         }
 
         /// <summary>
@@ -59,7 +62,13 @@ namespace PartnershipAgent.Core.Evaluation
 
             var contexts = new List<EvaluationContext>();
 
-            // Add ground-truth based evaluators if expected answer is provided
+            // Try to get ground truth from service if not explicitly provided
+            if (string.IsNullOrWhiteSpace(expectedAnswer))
+            {
+                expectedAnswer = _groundTruthService.GetExpectedOutput(userPrompt, module);
+            }
+
+            // Add ground-truth based evaluators if expected answer is available
             if (!string.IsNullOrWhiteSpace(expectedAnswer))
             {
                 evaluators.AddRange([

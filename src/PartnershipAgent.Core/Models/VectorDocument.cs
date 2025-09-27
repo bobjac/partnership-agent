@@ -56,7 +56,5 @@ namespace PartnershipAgent.Core.Models
         /// </summary>
         [JsonPropertyName("updatedAt")]
         public DateTime UpdatedAt { get; set; }
-
-
     }
 }

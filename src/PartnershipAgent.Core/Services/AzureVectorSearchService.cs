@@ -50,10 +50,7 @@ namespace PartnershipAgent.Core.Services
             var openAIApiKey = configuration["AzureOpenAI:ApiKey"] ?? throw new InvalidOperationException("AzureOpenAI:ApiKey not configured");
             _embeddingDeploymentName = configuration["AzureOpenAI:EmbeddingDeploymentName"] ?? "text-embedding-ada-002";
             
-            // Create HTTP client with infinite timeout for embeddings
-            var httpClient = new System.Net.Http.HttpClient();
-            httpClient.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
-            
+            // Create client options with infinite network timeout for embeddings
             var clientOptions = new AzureOpenAIClientOptions();
             clientOptions.NetworkTimeout = System.Threading.Timeout.InfiniteTimeSpan;
             

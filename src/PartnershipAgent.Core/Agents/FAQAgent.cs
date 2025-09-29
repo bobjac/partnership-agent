@@ -8,6 +8,7 @@ using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using PartnershipAgent.Core.Models;
+using PartnershipAgent.Core.Steps;
 using PartnershipAgent.Core.Services;
 using Microsoft.Extensions.Logging;
 
@@ -151,7 +152,8 @@ public class FAQAgent : BaseChatHistoryAgent
     [KernelFunction, Description("Generates a comprehensive answer to the user's question based on relevant documents.")]
     public async Task<FAQAgentResponse> GenerateAnswer(
         [Description("The user's original question")] string query,
-        [Description("List of relevant documents to base the answer on")] List<DocumentResult> documents)
+        [Description("List of relevant documents to base the answer on")] List<DocumentResult> documents,
+        IBidirectionalToClientChannel? streamingChannel = null)
     {
         Logger.LogInformation("Generating structured response based on {Count} documents for conversation thread {ThreadId}", documents.Count, ThreadId);
 
@@ -174,14 +176,49 @@ public class FAQAgent : BaseChatHistoryAgent
                 await _chatHistoryService.AddMessageToChatHistoryAsync(ThreadId, new ChatMessageContent(AuthorRole.User, prompt));
                 var chatHistory = await _chatHistoryService.GetChatHistoryAsync(ThreadId);
                 
-                var agentResponses = InvokeAsync(chatHistory);
-                var lastResponse = "";
+                string lastResponse = "";
                 
-                await foreach (var agentResponse in agentResponses)
+                if (streamingChannel != null)
                 {
-                    if (agentResponse is ChatMessageContent messageContent)
+                    Logger.LogInformation("STREAMING ENABLED: Using real-time streaming for conversation thread {ThreadId}", ThreadId);
+                    
+                    // Stream the response in real-time
+                    await streamingChannel.WriteAsync("status", "Generating answer using AI...");
+                    
+                    var streamingResponses = InvokeStreamingAsync(chatHistory);
+                    var responseBuilder = new System.Text.StringBuilder();
+                    
+                    await foreach (var streamingContent in streamingResponses)
                     {
-                        lastResponse = messageContent.Content ?? "";
+                        if (streamingContent is Microsoft.SemanticKernel.StreamingChatMessageContent streaming)
+                        {
+                            var chunk = streaming.Content ?? "";
+                            if (!string.IsNullOrEmpty(chunk))
+                            {
+                                responseBuilder.Append(chunk);
+                                // Stream each chunk to the client immediately
+                                Logger.LogInformation("STREAMING CHUNK: {Chunk}", chunk);
+                                await streamingChannel.WriteAsync("chat", chunk);
+                            }
+                        }
+                    }
+                    
+                    lastResponse = responseBuilder.ToString();
+                    Logger.LogInformation("STREAMING COMPLETE: Total response length {Length}", lastResponse.Length);
+                }
+                else
+                {
+                    Logger.LogWarning("STREAMING DISABLED: streamingChannel is null, falling back to non-streaming");
+                    
+                    // Fallback to non-streaming for backward compatibility
+                    var agentResponses = InvokeAsync(chatHistory);
+                    
+                    await foreach (var agentResponse in agentResponses)
+                    {
+                        if (agentResponse is ChatMessageContent messageContent)
+                        {
+                            lastResponse = messageContent.Content ?? "";
+                        }
                     }
                 }
                 
@@ -236,11 +273,14 @@ public class FAQAgent : BaseChatHistoryAgent
     /// <summary>
     /// Legacy method for backward compatibility.
     /// </summary>
-    public async Task<FAQAgentResponse> GenerateStructuredResponseAsync(string query, List<DocumentResult> relevantDocuments)
+    public async Task<FAQAgentResponse> GenerateStructuredResponseAsync(string query, List<DocumentResult> relevantDocuments, IBidirectionalToClientChannel? streamingChannel = null)
     {
-        // For now, delegate to the async version
-        // In a full implementation, this would use the Agent's chat completion capabilities
-        return await GenerateAnswer(query, relevantDocuments);
+        // Debug logging to trace streaming channel parameter
+        Logger.LogInformation("FAQAgent.GenerateStructuredResponseAsync called with streamingChannel (not null: {NotNull}, type: {Type}) for thread {ThreadId}", 
+            streamingChannel != null, streamingChannel?.GetType().Name, ThreadId);
+        
+        // Pass the streaming channel to enable real-time response streaming
+        return await GenerateAnswer(query, relevantDocuments, streamingChannel);
     }
 
     /// <summary>

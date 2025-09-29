@@ -397,10 +397,18 @@ namespace PartnershipAgent.WebApi.Controllers
                 // Upload to Azure AI Search
                 var uploadRequest = new
                 {
-                    value = documentsWithEmbeddings.Select(doc => new
+                    value = documentsWithEmbeddings.Select(doc => new Dictionary<string, object>
                     {
-                        doc,
-                        ["@search.action"] = "upload"
+                        ["@search.action"] = "upload",
+                        // Flatten the document properties
+                        ["id"] = doc.Id,
+                        ["content"] = doc.Content,
+                        ["title"] = doc.Title,
+                        ["source"] = doc.Source,
+                        ["category"] = doc.Category,
+                        ["summary"] = doc.Summary,
+                        ["keywords"] = doc.Keywords,
+                        ["contentVector"] = doc.ContentVector
                     }).ToArray()
                 };
                 

@@ -60,12 +60,19 @@ public class ResponseGenerationStep : KernelProcessStep
         {
             _logger.LogInformation("Starting response generation for session {ThreadId}", processModel.ThreadId);
             
+            // Get the streaming channel from the kernel services (which contains the one we injected)
+            var streamingChannel = kernel.GetRequiredService<IBidirectionalToClientChannel>();
+            _logger.LogInformation("RESPONSEGEN: Got streaming channel (not null: {NotNull}, type: {Type}) for thread {ThreadId}", 
+                streamingChannel != null, streamingChannel?.GetType().Name, processModel.ThreadId);
+            
             // Send status update to client
             await _responseChannel.WriteAsync(AIEventTypes.Status, 
                 JsonSerializer.Serialize(new { message = "Generating comprehensive answer..." }));
 
-            // Generate structured response based on found documents
-            var structuredResponse = await _faqAgent.GenerateStructuredResponseAsync(processModel.Input, processModel.RelevantDocuments);
+            // Generate structured response based on found documents with streaming support
+            _logger.LogInformation("RESPONSEGEN: Calling GenerateStructuredResponseAsync with streamingChannel (not null: {NotNull}) for thread {ThreadId}", 
+                streamingChannel != null, processModel.ThreadId);
+            var structuredResponse = await _faqAgent.GenerateStructuredResponseAsync(processModel.Input, processModel.RelevantDocuments, streamingChannel);
             processModel.GeneratedResponse = structuredResponse;
             processModel.FinalResponse = structuredResponse.Answer;
             await _chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.Assistant, processModel.FinalResponse));

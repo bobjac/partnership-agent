@@ -3,9 +3,12 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PartnershipAgent.Core.Models;
 using PartnershipAgent.Core.Services;
+using PartnershipAgent.Core.Steps;
+using PartnershipAgent.WebApi;
 
 namespace PartnershipAgent.WebApi.Controllers;
 
@@ -65,23 +68,29 @@ public class ChatController : ControllerBase
         request.UserId = "mock-user-123";
         request.TenantId = "tenant-123";
 
-        Response.Headers["Content-Type"] = "text/plain; charset=utf-8";
+        Response.Headers["Content-Type"] = "text/event-stream";
         Response.Headers["Cache-Control"] = "no-cache";
         Response.Headers["Connection"] = "keep-alive";
+        Response.Headers["Access-Control-Allow-Origin"] = "*";
 
         try
         {
+            // Create a streaming channel that writes directly to this HTTP response
+            var streamingChannel = new StreamingToClientChannel(Response);
+            _logger.LogInformation("CHATCONTROLLER: Created StreamingToClientChannel for thread {ThreadId}", request.ThreadId);
+            
             // Start with immediate status update
             var statusMessage = JsonSerializer.Serialize(new { 
                 type = "status", 
                 message = "Processing your request...", 
                 timestamp = DateTime.UtcNow 
             });
-            await HttpResponseWritingExtensions.WriteAsync(Response, statusMessage + "\n");
+            await Response.WriteAsync($"data: {statusMessage}\n\n");
             await Response.Body.FlushAsync();
 
-            // Process the request
-            var chatResponse = await _stepOrchestrationService.ProcessRequestAsync(request);
+            // Process the request with streaming enabled
+            _logger.LogInformation("CHATCONTROLLER: Calling ProcessRequestAsync with streaming channel for thread {ThreadId}", request.ThreadId);
+            var chatResponse = await _stepOrchestrationService.ProcessRequestAsync(request, streamingChannel);
             
             // Return final response
             var responseMessage = JsonSerializer.Serialize(new { 
@@ -89,14 +98,14 @@ public class ChatController : ControllerBase
                 content = chatResponse.Response,
                 timestamp = DateTime.UtcNow 
             });
-            await HttpResponseWritingExtensions.WriteAsync(Response, responseMessage + "\n");
+            await HttpResponseWritingExtensions.WriteAsync(Response, $"data: {responseMessage}\n\n");
             await Response.Body.FlushAsync();
 
             var completeMessage = JsonSerializer.Serialize(new { 
                 type = "complete", 
                 timestamp = DateTime.UtcNow 
             });
-            await HttpResponseWritingExtensions.WriteAsync(Response, completeMessage + "\n");
+            await HttpResponseWritingExtensions.WriteAsync(Response, $"data: {completeMessage}\n\n");
             await Response.Body.FlushAsync();
         }
         catch (Exception ex)
@@ -107,7 +116,7 @@ public class ChatController : ControllerBase
                 message = "An error occurred while processing your request.",
                 timestamp = DateTime.UtcNow 
             });
-            await HttpResponseWritingExtensions.WriteAsync(Response, errorMessage + "\n");
+            await HttpResponseWritingExtensions.WriteAsync(Response, $"data: {errorMessage}\n\n");
             await Response.Body.FlushAsync();
         }
     }

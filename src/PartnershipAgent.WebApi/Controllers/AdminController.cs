@@ -400,7 +400,7 @@ namespace PartnershipAgent.WebApi.Controllers
                     value = documentsWithEmbeddings.Select(doc => new
                     {
                         doc,
-                        ["@search.action"] = "upload"
+                        OperationType = "upload"  // Note: Should be @search.action for Azure Search API
                     }).ToArray()
                 };
                 

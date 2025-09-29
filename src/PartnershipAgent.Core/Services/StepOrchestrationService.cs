@@ -142,6 +142,112 @@ public class StepOrchestrationService
     }
 
     /// <summary>
+    /// Processes a chat request through the orchestrated step pipeline using Semantic Kernel's process framework
+    /// with a provided streaming channel for real-time communication.
+    /// </summary>
+    /// <param name="request">The chat request to process</param>
+    /// <param name="streamingChannel">The streaming channel for real-time client communication</param>
+    /// <returns>The final chat response</returns>
+    public async Task<ChatResponse> ProcessRequestAsync(ChatRequest request, IBidirectionalToClientChannel streamingChannel)
+    {
+        _logger.LogInformation("ORCHESTRATION: ProcessRequestAsync called with streaming channel (not null: {NotNull}) for thread {ThreadId}", 
+            streamingChannel != null, request.ThreadId);
+            
+        var parent = Activity.Current;
+        Activity.Current = null; // Set Activity.Current to null to force StartActivity to create a new root activity
+
+        using var activity = _activitySource.StartActivity($"ThreadId: {request.ThreadId}", ActivityKind.Internal, parentId: default);
+        
+        var processModel = new ProcessModel
+        {
+            ThreadId = Guid.TryParse(request.ThreadId, out var threadGuid) ? threadGuid : Guid.NewGuid(),
+            Input = request.Prompt,
+            InitialPrompt = request.Prompt,
+            UserId = request.UserId,
+            TenantId = request.TenantId
+        };
+
+        try
+        {
+            activity?.SetTag("request.user_prompt", request.Prompt);
+            activity?.SetTag("request.user_id", request.UserId);
+            activity?.SetTag("request.tenant_id", request.TenantId);
+
+            _logger.LogInformation("Starting step orchestration for session {ThreadId}", processModel.ThreadId);
+
+            // Build and execute the process using Semantic Kernel's native process framework
+            var process = BuildProcess(processModel.ThreadId);
+            
+            // Create a kernel builder and register the services (following working pattern)
+            var kernelBuilder = Kernel.CreateBuilder();
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<EntityResolutionAgent>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<FAQAgent>());
+            
+            // Use the provided streaming channel instead of getting it from dependency injection
+            kernelBuilder.Services.AddSingleton<IBidirectionalToClientChannel>(streamingChannel);
+            
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IChatHistoryService>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ProcessResponseCollector>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<EntityResolutionStep>>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<DocumentSearchStep>>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<ResponseGenerationStep>>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<UserResponseStep>>());
+            
+            // Copy the chat completion service from the original kernel
+            var chatCompletion = _kernel.GetRequiredService<IChatCompletionService>();
+            kernelBuilder.Services.AddSingleton(chatCompletion);
+            
+            var processKernel = kernelBuilder.Build();
+            
+            await using LocalKernelProcessContext localProcess = await process.StartAsync(
+                processKernel,
+                new KernelProcessEvent()
+                {
+                    Id = AgentOrchestrationEvents.StartProcess,
+                    Data = processModel
+                });
+
+            _logger.LogInformation("Step orchestration completed for session {ThreadId}", processModel.ThreadId);
+
+            activity?.SetTag("orchestration.final_event", AgentOrchestrationEvents.ProcessCompleted);
+
+            // Get the final response from the collector
+            var responseCollector = _serviceProvider.GetRequiredService<ProcessResponseCollector>();
+            var finalResponse = responseCollector.GetAndRemoveResponse(processModel.ThreadId);
+            var chatResponse = finalResponse ?? CreateChatResponse(request, processModel);
+            
+            // Evaluate the response if evaluator is available (fire-and-forget for performance)
+            if (_evaluator != null && !string.IsNullOrWhiteSpace(chatResponse.Response))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        _ = await _evaluator.EvaluateAndLogAsync(
+                            userPrompt: request.Prompt,
+                            response: chatResponse.Response,
+                            module: "PartnershipAgent",
+                            parentActivity: _activitySource,
+                            expectedAnswer: null
+                        );
+                    }
+                    catch (Exception evalEx)
+                    {
+                        _logger.LogWarning(evalEx, "Failed to evaluate response for session {ThreadId}", processModel.ThreadId);
+                    }
+                });
+            }
+            
+            return chatResponse;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in step orchestration for session {ThreadId}", processModel.ThreadId);
+            return CreateErrorResponse(request);
+        }
+    }
+
+    /// <summary>
     /// Builds the process using Semantic Kernel's native ProcessBuilder.
     /// </summary>
     /// <param name="ThreadId">The session ID for the process</param>

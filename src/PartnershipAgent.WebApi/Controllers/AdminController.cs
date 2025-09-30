@@ -401,14 +401,14 @@ namespace PartnershipAgent.WebApi.Controllers
                     {
                         ["@search.action"] = "upload",
                         // Flatten the document properties
-                        ["id"] = doc.Id,
-                        ["content"] = doc.Content,
-                        ["title"] = doc.Title,
-                        ["source"] = doc.Source,
-                        ["category"] = doc.Category,
-                        ["summary"] = doc.Summary,
-                        ["keywords"] = doc.Keywords,
-                        ["contentVector"] = doc.ContentVector
+                        ["id"] = ((dynamic)doc).id,
+                        ["content"] = ((dynamic)doc).content,
+                        ["title"] = ((dynamic)doc).title,
+                        ["category"] = ((dynamic)doc).category,
+                        ["tenantId"] = ((dynamic)doc).tenantId,
+                        ["createdAt"] = ((dynamic)doc).createdAt,
+                        ["updatedAt"] = ((dynamic)doc).updatedAt,
+                        ["contentVector"] = ((dynamic)doc).contentVector
                     }).ToArray()
                 };
                 

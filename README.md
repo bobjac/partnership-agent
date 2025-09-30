@@ -290,6 +290,7 @@ Detailed guides available in the `/docs` directory:
 - **[Azure AI Search Setup](docs/azure-ai-search-setup.md)** - 🚀 High-performance vector search configuration
 - **[Azure Key Vault Setup](docs/azure-keyvault-setup.md)** - Enterprise credential management
 - **[Credential Management](docs/credential-management.md)** - Security best practices
+- **[Monitoring and Telemetry](docs/monitoring-and-telemetry.md)** - 📊 Application Insights queries for evaluation metrics and performance analysis
 - **[Citation Testing Guide](setup/TESTING_CITATIONS.md)** - Comprehensive citation testing
 
 ## 🧩 Project Structure

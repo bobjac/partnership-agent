@@ -136,8 +136,19 @@ public class StepOrchestrationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in step orchestration for session {ThreadId}", processModel.ThreadId);
-            return CreateErrorResponse(request);
+            _logger.LogError(ex, "Error in step orchestration for session {ThreadId}: {ErrorMessage}", processModel.ThreadId, ex.Message);
+            
+            // Check for common configuration issues
+            if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized") || ex.Message.Contains("API key"))
+            {
+                _logger.LogError("Configuration issue detected: Missing or invalid API keys");
+            }
+            else if (ex.Message.Contains("404") || ex.Message.Contains("endpoint"))
+            {
+                _logger.LogError("Configuration issue detected: Invalid endpoint URLs");
+            }
+            
+            return CreateErrorResponse(request, ex);
         }
     }
 
@@ -242,8 +253,19 @@ public class StepOrchestrationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in step orchestration for session {ThreadId}", processModel.ThreadId);
-            return CreateErrorResponse(request);
+            _logger.LogError(ex, "Error in step orchestration for session {ThreadId}: {ErrorMessage}", processModel.ThreadId, ex.Message);
+            
+            // Check for common configuration issues
+            if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized") || ex.Message.Contains("API key"))
+            {
+                _logger.LogError("Configuration issue detected: Missing or invalid API keys");
+            }
+            else if (ex.Message.Contains("404") || ex.Message.Contains("endpoint"))
+            {
+                _logger.LogError("Configuration issue detected: Invalid endpoint URLs");
+            }
+            
+            return CreateErrorResponse(request, ex);
         }
     }
 
@@ -330,12 +352,21 @@ public class StepOrchestrationService
     /// </summary>
     /// <param name="request">The original chat request</param>
     /// <returns>An error chat response</returns>
-    private static ChatResponse CreateErrorResponse(ChatRequest request)
+    private static ChatResponse CreateErrorResponse(ChatRequest request, Exception? ex = null)
     {
+        var errorMessage = "I encountered an error while analyzing your request. Please try rephrasing your question.";
+        
+        // Add specific error details for debugging (but keep user-friendly for production)
+        if (ex != null)
+        {
+            // In development, you might want to expose more details
+            // errorMessage += $" (Debug: {ex.Message})";
+        }
+        
         return new ChatResponse
         {
             ThreadId = request.ThreadId,
-            Response = "I encountered an error while processing your request. Please try again.",
+            Response = errorMessage,
             ExtractedEntities = [],
             RelevantDocuments = []
         };

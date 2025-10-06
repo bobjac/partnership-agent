@@ -8,7 +8,6 @@ using Microsoft.Extensions.Logging;
 using PartnershipAgent.Core.Models;
 using PartnershipAgent.Core.Services;
 using PartnershipAgent.Core.Steps;
-using PartnershipAgent.WebApi;
 
 namespace PartnershipAgent.WebApi.Controllers;
 
@@ -75,8 +74,8 @@ public class ChatController : ControllerBase
 
         try
         {
-            // Create a streaming channel that writes directly to this HTTP response
-            var streamingChannel = new StreamingToClientChannel(Response);
+            // Create a streaming channel that writes directly to this HTTP response body stream
+            var streamingChannel = new StreamingToClientChannel(Response.Body);
             _logger.LogInformation("CHATCONTROLLER: Created StreamingToClientChannel for thread {ThreadId}", request.ThreadId);
             
             // Start with immediate status update

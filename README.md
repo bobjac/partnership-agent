@@ -285,12 +285,23 @@ When using `--vector-search` option, you'll need:
 
 Detailed guides available in the `/docs` directory:
 
+### Core Setup & Configuration
 - **[Setup Instructions](docs/setup-instructions.md)** - Complete manual setup guide
 - **[Azure OpenAI Setup](docs/azure-openai-setup.md)** - Azure OpenAI configuration
 - **[Azure AI Search Setup](docs/azure-ai-search-setup.md)** - 🚀 High-performance vector search configuration
 - **[Azure Key Vault Setup](docs/azure-keyvault-setup.md)** - Enterprise credential management
 - **[Credential Management](docs/credential-management.md)** - Security best practices
+- **[Chat History Configuration](docs/chat-history-configuration.md)** - Chat persistence options
+
+### System Features & Architecture
+- **[Evaluation System](docs/EVALUATION_SYSTEM.md)** - 📊 AI response evaluation framework with quality metrics
+- **[Observability](docs/OBSERVABILITY.md)** - Monitoring and telemetry configuration
+- **[Performance Optimization](docs/PERFORMANCE_OPTIMIZATION_PLAN.md)** - Performance tuning strategies
+
+### Testing & Troubleshooting
 - **[Citation Testing Guide](setup/TESTING_CITATIONS.md)** - Comprehensive citation testing
+- **[Timeout Troubleshooting](docs/TIMEOUT_TROUBLESHOOTING.md)** - Network and timeout issues
+- **[No Timeouts Configuration](docs/NO_TIMEOUTS_CONFIG.md)** - Disable timeout configurations
 
 ## 🧩 Project Structure
 

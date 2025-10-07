@@ -156,6 +156,17 @@ When ground truth is available:
 
 ## Sample Queries
 
+### Recent Partnership Agent Dependencies (Most Commonly Used)
+```kql
+// Monitor recent dependencies - commonly used for troubleshooting
+dependencies
+| where timestamp >= ago(30m)
+| where cloud_RoleName == "PartnershipAgent"
+| project timestamp, name, target, duration, success, customDimensions
+| order by timestamp desc
+| limit 20
+```
+
 ### Monitor AI Quality Trends
 ```kql
 traces
@@ -184,4 +195,55 @@ traces
 | where Coherence < 0.7
 | project timestamp, UserPrompt, Response, Coherence
 | sort by timestamp desc
+```
+
+### Dependency Performance Analysis
+```kql
+// Analyze dependency performance patterns
+dependencies
+| where timestamp >= ago(1h)
+| where cloud_RoleName == "PartnershipAgent"
+| summarize 
+    Count = count(),
+    AvgDuration = avg(duration),
+    FailureRate = countif(success == false) * 100.0 / count()
+    by name, target
+| order by AvgDuration desc
+```
+
+### Failed Dependencies Investigation
+```kql
+// Investigate failed dependencies in the last hour
+dependencies
+| where timestamp >= ago(1h)
+| where cloud_RoleName == "PartnershipAgent"
+| where success == false
+| project timestamp, name, target, duration, resultCode, customDimensions
+| order by timestamp desc
+```
+
+### Extended Time Range Dependencies
+```kql
+// Dependencies over the last 24 hours for trend analysis
+dependencies
+| where timestamp >= ago(24h)
+| where cloud_RoleName == "PartnershipAgent"
+| project timestamp, name, target, duration, success, customDimensions
+| order by timestamp desc
+| limit 100
+```
+
+### Dependency Success Rate by Service
+```kql
+// Success rates by dependency target
+dependencies
+| where timestamp >= ago(2h)
+| where cloud_RoleName == "PartnershipAgent"
+| summarize 
+    Total = count(),
+    Successful = countif(success == true),
+    Failed = countif(success == false),
+    SuccessRate = round(countif(success == true) * 100.0 / count(), 2)
+    by target
+| order by SuccessRate asc
 ```

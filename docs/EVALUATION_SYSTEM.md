@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Partnership Agent includes a comprehensive AI response evaluation system built on Microsoft's Extensions.AI.Evaluation framework. This system automatically assesses the quality of AI-generated responses using multiple metrics and can optionally compare responses against ground truth data.
+The Partnership Agent includes a comprehensive AI response evaluation system built on Microsoft's Extensions.AI.Evaluation framework. This system automatically assesses the quality of AI-generated responses using multiple metrics and can optionally compare responses against ground truth data. Since this is a RAG (Retrieval-Augmented Generation) system, it also includes retrieval quality evaluation to assess how well the document retrieval process supports accurate responses.
 
 ## Architecture
 
@@ -52,6 +52,17 @@ These evaluators run on every response regardless of whether ground truth is ava
 - **Scoring**: 1-5 scale where higher scores indicate better language quality
 - **Use Case**: Ensures responses are well-written and easy to understand
 
+### RAG-Based Evaluators (Applied When Retrieved Documents Available)
+
+These evaluators assess the quality of document retrieval in Retrieval-Augmented Generation scenarios:
+
+#### **Retrieval Evaluator**
+- **Purpose**: Measures effectiveness of document retrieval and relevance to the user's query
+- **Method**: Analyzes how well retrieved documents relate to the user's question and generated response
+- **Scoring**: 0-1 scale where 1 indicates highly relevant retrieval
+- **Use Case**: Ensures the RAG system retrieves documents that are pertinent to answering the user's question
+- **Context**: Uses content from retrieved documents to assess retrieval quality
+
 ### Ground Truth-Based Evaluators (Applied When Expected Answers Available)
 
 These evaluators compare responses against known correct answers:
@@ -72,11 +83,10 @@ These evaluators compare responses against known correct answers:
 
 The Microsoft.Extensions.AI.Evaluation.Quality package includes additional evaluators that can be integrated:
 
-#### **Quality Evaluators**
-- **Relevance Evaluator** - Measures how well the response addresses the user's question
-- **Truth Evaluator** - Assesses factual accuracy of the response
-- **Completeness Evaluator** - Evaluates whether the response fully answers the question
-- **Retrieval Evaluator** - Measures effectiveness of information retrieval in RAG scenarios
+#### **Quality Evaluators (Available in newer versions)**
+- **Relevance Evaluator** - Measures how well the response addresses the user's question (not available in v9.4.0-preview.1.25207.5)
+- **Truth Evaluator** - Assesses factual accuracy of the response (not available in v9.4.0-preview.1.25207.5)
+- **Completeness Evaluator** - Evaluates whether the response fully answers the question (not available in v9.4.0-preview.1.25207.5)
 
 #### **Agent-Specific Evaluators**
 - **IntentResolution Evaluator** - Measures how effectively an agent understands user intent
@@ -151,9 +161,10 @@ if (evaluationEnabled)
 
 All evaluation metrics are automatically logged to OpenTelemetry with the activity source "PartnershipAgent.Evaluation". Metrics include:
 
-- Individual evaluator scores (e.g., `gen_ai.evaluation.Coherence.score`)
+- Individual evaluator scores (e.g., `gen_ai.evaluation.Coherence.score`, `gen_ai.evaluation.Retrieval.score`)
 - Evaluation context (`gen_ai.evaluation.module`, `gen_ai.evaluation.user_prompt`)
 - Ground truth availability flag (`gen_ai.evaluation.has_ground_truth`)
+- Retrieval evaluation flags (`gen_ai.evaluation.has_retrieval`, `gen_ai.evaluation.retrieved_document_count`)
 - Full response content (`gen_ai.full_nl_response`)
 
 ### Metric Analysis
@@ -184,6 +195,7 @@ To add additional Microsoft evaluators:
        new FluencyEvaluator(),
        new RelevanceEvaluator(),        // New evaluator
        new CompletenessEvaluator()      // New evaluator
+       // Note: RetrievalEvaluator is already integrated and automatically used when documents are available
    };
    ```
 
@@ -304,6 +316,165 @@ builder.Services.AddLogging(loggingBuilder =>
 - **Domain-Specific Evaluators**: Partnership law and business-specific evaluation criteria
 - **User Feedback Integration**: Incorporate human feedback into evaluation scores
 - **Continuous Learning**: Update ground truth based on successful response patterns
+
+## Current Limitations and Future Enhancements
+
+### **Package Version Compatibility Issues**
+
+The Partnership Agent evaluation system currently faces significant limitations due to package dependency conflicts:
+
+#### **Current Configuration**
+- Microsoft.SemanticKernel: **v1.48.0** (stable)
+- Microsoft.Extensions.AI.Evaluation: **v9.4.0-preview.1.25207.5** (limited compatibility)
+- Microsoft.Extensions.AI.Evaluation.Quality: **v9.4.0-preview.1.25207.5** (limited compatibility)
+
+#### **The Core Problem**
+Upgrading to newer evaluation packages (v9.6.0+) that contain additional evaluators creates **breaking incompatibilities** with Microsoft.SemanticKernel v1.48.0, causing:
+- `System.MissingMethodException` in schema builders
+- `System.TypeLoadException` for OpenAI conversation types  
+- Entity resolution failures that prevent the system from functioning
+
+### **Currently Available Evaluators**
+
+**✅ Working Evaluators:**
+- **CoherenceEvaluator** - Logical flow and consistency assessment
+- **FluencyEvaluator** - Language quality and readability
+- **EquivalenceEvaluator** - Semantic similarity to ground truth (when available)
+- **GroundednessEvaluator** - Factual accuracy against reference material (when available)
+
+### **Missing Critical Evaluators for Partnership RAG**
+
+**❌ Blocked Evaluators (High Value for Legal/Business Q&A):**
+
+1. **RetrievalEvaluator** 
+   - **Status**: Code implemented but commented out (lines 90-102 in AssistantResponseEvaluator.cs)
+   - **Impact**: Cannot assess RAG document retrieval quality
+   - **Critical for**: Ensuring relevant documents are retrieved for partnership questions
+
+2. **RelevanceEvaluator**
+   - **Status**: Not available in v9.4.0-preview.1.25207.5
+   - **Impact**: Cannot assess if responses address the user's specific question
+   - **Critical for**: Partnership Q&A where precision is essential
+
+3. **CompletenessEvaluator**
+   - **Status**: Not available in v9.4.0-preview.1.25207.5  
+   - **Impact**: Cannot verify comprehensive answers to complex partnership topics
+   - **Critical for**: Legal/business contexts requiring thorough responses
+
+4. **TruthEvaluator**
+   - **Status**: Not available in v9.4.0-preview.1.25207.5
+   - **Impact**: Cannot assess factual accuracy independently
+   - **Critical for**: Legal/business information accuracy
+
+### **Upgrade Path and Implementation Steps**
+
+#### **Phase 1: Package Compatibility Resolution**
+
+**Prerequisites:**
+1. **Monitor Microsoft.SemanticKernel releases** for compatibility with newer Microsoft.Extensions.AI packages
+2. **Test compatibility** between SemanticKernel v1.49.0+ and Microsoft.Extensions.AI.Evaluation v9.6.0+
+
+**Implementation Steps:**
+```bash
+# When compatible versions are available:
+# 1. Update package versions
+dotnet add package Microsoft.SemanticKernel --version [compatible-version]
+dotnet add package Microsoft.Extensions.AI.Evaluation --version 9.6.0
+dotnet add package Microsoft.Extensions.AI.Evaluation.Quality --version 9.6.0
+
+# 2. Test compatibility
+dotnet build
+dotnet test
+```
+
+#### **Phase 2: Enable RetrievalEvaluator**
+
+**Implementation Steps:**
+1. **Uncomment RetrievalEvaluator code** in `AssistantResponseEvaluator.cs` (lines 93-102):
+   ```csharp
+   // Remove comment blocks around:
+   if (retrievedDocuments != null && retrievedDocuments.Count > 0)
+   {
+       evaluators.Add(new RetrievalEvaluator());
+       var retrievedTexts = retrievedDocuments.Select(doc => doc.Content).ToList();
+       contexts.Add(new RetrievalEvaluatorContext(retrievedTexts));
+   }
+   ```
+
+2. **Update telemetry logging** to capture retrieval metrics:
+   ```csharp
+   // Add RetrievalEvaluator score logging
+   activity?.SetTag($"gen_ai.evaluation.Retrieval.score", retrievalScore);
+   ```
+
+3. **Test RAG evaluation** with sample partnership queries
+
+#### **Phase 3: Add Quality Evaluators**
+
+**Implementation Steps:**
+1. **Add evaluators to the base list** in `AssistantResponseEvaluator.cs`:
+   ```csharp
+   var evaluators = new List<IEvaluator>
+   {
+       new CoherenceEvaluator(),
+       new FluencyEvaluator(),
+       new RelevanceEvaluator(),     // NEW: Question addressing
+       new CompletenessEvaluator(),  // NEW: Answer thoroughness  
+       new TruthEvaluator()          // NEW: Factual accuracy
+   };
+   ```
+
+2. **Update OpenTelemetry metrics** to track new evaluator scores
+
+3. **Update documentation** with new evaluation capabilities
+
+#### **Phase 4: Domain-Specific Enhancements**
+
+**Partnership-Specific Evaluators:**
+1. **Legal Accuracy Evaluator** - Partnership law compliance
+2. **Business Context Evaluator** - Commercial relevance assessment  
+3. **Citation Quality Evaluator** - Source attribution accuracy
+4. **Multi-turn Conversation Evaluator** - Context awareness across exchanges
+
+### **Monitoring and Alerts**
+
+**Production Readiness Checklist:**
+- [ ] Package compatibility verified through testing
+- [ ] All evaluators functional in integration tests
+- [ ] OpenTelemetry metrics flowing to monitoring dashboards
+- [ ] Evaluation failure alerts configured  
+- [ ] Performance impact assessment completed
+- [ ] Ground truth data expanded for new evaluators
+
+### **Technical Debt and Risks**
+
+**Current Technical Debt:**
+- RetrievalEvaluator infrastructure exists but disabled
+- Limited evaluation coverage for RAG quality
+- Dependency on preview package versions
+- Manual package upgrade process required
+
+**Risk Mitigation:**
+- Regular compatibility testing with new package releases
+- Evaluation system can be disabled if issues arise
+- Fallback to basic evaluators (Coherence/Fluency) always available
+- Fire-and-forget evaluation design prevents user impact
+
+### **Expected Timeline**
+
+**Short Term (Next Release):**
+- Monitor SemanticKernel v1.49.0+ for compatibility
+- Prepare RetrievalEvaluator activation
+
+**Medium Term (Next Quarter):**
+- Full package upgrade when compatible
+- Enable all quality evaluators
+- Partnership-specific evaluation metrics
+
+**Long Term (6+ Months):**
+- Custom partnership domain evaluators
+- Advanced multi-turn conversation evaluation
+- Machine learning-based evaluation improvements
 
 ### Research Opportunities
 

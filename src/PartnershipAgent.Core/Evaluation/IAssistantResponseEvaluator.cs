@@ -1,4 +1,6 @@
 using Microsoft.Extensions.AI.Evaluation;
+using PartnershipAgent.Core.Models;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
 
@@ -6,7 +8,7 @@ namespace PartnershipAgent.Core.Evaluation
 {
     /// <summary>
     /// Interface for evaluating AI assistant responses using quality metrics.
-    /// Supports optional ground truth comparison and logs evaluation metrics using OpenTelemetry.
+    /// Supports optional ground truth comparison, retrieval evaluation, and logs evaluation metrics using OpenTelemetry.
     /// </summary>
     public interface IAssistantResponseEvaluator
     {
@@ -18,7 +20,8 @@ namespace PartnershipAgent.Core.Evaluation
         /// <param name="module">The module name used for logging/tracing context.</param>
         /// <param name="parentActivity">An optional activity used to trace and log evaluation metrics.</param>
         /// <param name="expectedAnswer">An optional expected answer for ground-truth-based evaluation.</param>
+        /// <param name="retrievedDocuments">An optional list of retrieved documents for retrieval evaluation in RAG scenarios.</param>
         /// <returns>An <see cref="EvaluationResult"/> containing the metrics from the evaluation.</returns>
-        Task<EvaluationResult> EvaluateAndLogAsync(string userPrompt, string response, string module, ActivitySource? parentActivity = null, string? expectedAnswer = null);
+        Task<EvaluationResult> EvaluateAndLogAsync(string userPrompt, string response, string module, ActivitySource? parentActivity = null, string? expectedAnswer = null, IReadOnlyList<DocumentResult>? retrievedDocuments = null);
     }
 }

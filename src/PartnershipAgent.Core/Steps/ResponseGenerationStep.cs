@@ -93,7 +93,8 @@ public class ResponseGenerationStep : KernelProcessStep
                             response: structuredResponse.Answer,
                             module: "FAQAgent",
                             parentActivity: activity?.Source,
-                            expectedAnswer: null
+                            expectedAnswer: null,
+                            retrievedDocuments: processModel.RelevantDocuments
                         );
                     }
                     catch (Exception evalEx)

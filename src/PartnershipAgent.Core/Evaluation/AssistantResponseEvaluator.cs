@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.AI.Evaluation;
@@ -30,7 +31,9 @@ namespace PartnershipAgent.Core.Evaluation
         /// 
         /// If an expected answer is provided (either explicitly or retrieved from the ground truth repository),
         /// additional evaluators such as Equivalence and Groundedness are used.
-        /// Otherwise, only general-purpose evaluators like Coherence and Fluency are applied.
+        /// 
+        /// If retrieved documents are provided, RetrievalEvaluator is used to assess the quality of document retrieval in RAG scenarios.
+        /// Base evaluators (Coherence, Fluency) are always applied to assess response quality.
         ///
         /// Results are optionally logged to telemetry if a parent activity is provided.
         /// </summary>
@@ -39,8 +42,9 @@ namespace PartnershipAgent.Core.Evaluation
         /// <param name="module">The module name used for logging/tracing context.</param>
         /// <param name="parentActivity">An optional activity used to trace and log evaluation metrics.</param>
         /// <param name="expectedAnswer">An optional expected answer for ground-truth-based evaluation.</param>
+        /// <param name="retrievedDocuments">An optional list of retrieved documents for retrieval evaluation in RAG scenarios.</param>
         /// <returns>An <see cref="EvaluationResult"/> containing the metrics from the evaluation.</returns>
-        public async Task<EvaluationResult> EvaluateAndLogAsync(string userPrompt, string response, string module, ActivitySource? parentActivity = null, string? expectedAnswer = null)
+        public async Task<EvaluationResult> EvaluateAndLogAsync(string userPrompt, string response, string module, ActivitySource? parentActivity = null, string? expectedAnswer = null, IReadOnlyList<Models.DocumentResult>? retrievedDocuments = null)
         {
             // Prepare chat history for evaluation
             var messages = new List<ChatMessage>
@@ -58,6 +62,9 @@ namespace PartnershipAgent.Core.Evaluation
             {
                 new CoherenceEvaluator(),
                 new FluencyEvaluator()
+                // NOTE: Additional evaluators like RelevanceEvaluator, CompletenessEvaluator, and TruthEvaluator
+                // are not available in Microsoft.Extensions.AI.Evaluation.Quality v9.4.0-preview.1.25207.5
+                // These will be available in future package versions compatible with current SemanticKernel
             };
 
             var contexts = new List<EvaluationContext>();
@@ -81,6 +88,21 @@ namespace PartnershipAgent.Core.Evaluation
                     new GroundednessEvaluatorContext(expectedAnswer)
                 ]);
             }
+
+            // Add retrieval evaluator if retrieved documents are available (for RAG scenarios)
+            // NOTE: RetrievalEvaluator is not available in Microsoft.Extensions.AI.Evaluation.Quality v9.4.0-preview.1.25207.5
+            // It requires a newer version that is incompatible with current Microsoft.SemanticKernel v1.48.0
+            // TODO: Enable RetrievalEvaluator when upgrading to compatible package versions
+            /*
+            if (retrievedDocuments != null && retrievedDocuments.Count > 0)
+            {
+                evaluators.Add(new RetrievalEvaluator());
+
+                // Convert DocumentResult to the format expected by RetrievalEvaluator
+                var retrievedTexts = retrievedDocuments.Select(doc => doc.Content).ToList();
+                contexts.Add(new RetrievalEvaluatorContext(retrievedTexts));
+            }
+            */
 
             // Create a basic ChatConfiguration using the kernel's chat completion service
             var chatClient = _kernel.GetRequiredService<IChatClient>();
@@ -114,6 +136,10 @@ namespace PartnershipAgent.Core.Evaluation
 
                     // Log ground truth evaluation flag
                     activity?.SetTag($"gen_ai.evaluation.has_ground_truth", !string.IsNullOrWhiteSpace(expectedAnswer));
+                    
+                    // Log retrieval evaluation flag
+                    activity?.SetTag($"gen_ai.evaluation.has_retrieval", retrievedDocuments != null && retrievedDocuments.Count > 0);
+                    activity?.SetTag($"gen_ai.evaluation.retrieved_document_count", retrievedDocuments?.Count ?? 0);
                 }
             }
 

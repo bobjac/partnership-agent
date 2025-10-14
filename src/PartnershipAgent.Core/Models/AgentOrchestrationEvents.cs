@@ -11,6 +11,16 @@ public static class AgentOrchestrationEvents
     public const string StartProcess = "StartProcess";
 
     /// <summary>
+    /// Event fired when scoping evaluation is completed and request is in scope.
+    /// </summary>
+    public const string ScopingCompleted = "ScopingCompleted";
+
+    /// <summary>
+    /// Event fired when scoping evaluation determines the request is out of scope.
+    /// </summary>
+    public const string OutOfScope = "OutOfScope";
+
+    /// <summary>
     /// Event fired when entity extraction is completed.
     /// </summary>
     public const string EntityExtractionCompleted = "EntityExtractionCompleted";

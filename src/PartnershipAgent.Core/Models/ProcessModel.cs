@@ -62,4 +62,9 @@ public class ProcessModel
     /// Clarification message if needed.
     /// </summary>
     public string ClarificationMessage { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The scoping evaluation result from the ScopingAgent.
+    /// </summary>
+    public ScopingAgentResponse? ScopingResult { get; set; }
 }

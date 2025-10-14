@@ -144,15 +144,27 @@ if (!string.IsNullOrEmpty(elasticUsername) && !string.IsNullOrEmpty(elasticPassw
 
 builder.Services.AddSingleton<IElasticClient>(new ElasticClient(settings));
 
+builder.Services.AddScoped<ScopingAgent>(provider =>
+{
+    var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
+    var logger = provider.GetRequiredService<ILogger<ScopingAgent>>();
+
+    // Create a simple IRequestedBy implementation for this context
+    var requestedBy = new SimpleRequestedBy();
+    var ThreadId = Guid.NewGuid();
+
+    return new ScopingAgent(ThreadId, kernelBuilder, requestedBy, logger);
+});
+
 builder.Services.AddScoped<EntityResolutionAgent>(provider =>
 {
     var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
     var logger = provider.GetRequiredService<ILogger<EntityResolutionAgent>>();
-    
+
     // Create a simple IRequestedBy implementation for this context
     var requestedBy = new SimpleRequestedBy();
     var ThreadId = Guid.NewGuid();
-    
+
     return new EntityResolutionAgent(ThreadId, kernelBuilder, requestedBy, logger);
 });
 
@@ -235,6 +247,7 @@ else
 }
 
 // Register the individual step classes
+builder.Services.AddScoped<ScopingStep>();
 builder.Services.AddScoped<EntityResolutionStep>();
 builder.Services.AddScoped<DocumentSearchStep>();
 builder.Services.AddScoped<ResponseGenerationStep>();

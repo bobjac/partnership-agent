@@ -74,14 +74,16 @@ public class StepOrchestrationService
 
             // Build and execute the process using Semantic Kernel's native process framework
             var process = BuildProcess(processModel.ThreadId);
-            
+
             // Create a kernel builder and register the services (following working pattern)
             var kernelBuilder = Kernel.CreateBuilder();
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ScopingAgent>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<EntityResolutionAgent>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<FAQAgent>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IBidirectionalToClientChannel>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IChatHistoryService>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ProcessResponseCollector>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<ScopingStep>>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<EntityResolutionStep>>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<DocumentSearchStep>>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<ResponseGenerationStep>>());
@@ -177,17 +179,19 @@ public class StepOrchestrationService
 
             // Build and execute the process using Semantic Kernel's native process framework
             var process = BuildProcess(processModel.ThreadId);
-            
+
             // Create a kernel builder and register the services (following working pattern)
             var kernelBuilder = Kernel.CreateBuilder();
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ScopingAgent>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<EntityResolutionAgent>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<FAQAgent>());
-            
+
             // Use the provided streaming channel instead of getting it from dependency injection
             kernelBuilder.Services.AddSingleton<IBidirectionalToClientChannel>(streamingChannel);
-            
+
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<IChatHistoryService>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ProcessResponseCollector>());
+            kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<ScopingStep>>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<EntityResolutionStep>>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<DocumentSearchStep>>());
             kernelBuilder.Services.AddSingleton(_serviceProvider.GetRequiredService<ILogger<ResponseGenerationStep>>());
@@ -255,17 +259,29 @@ public class StepOrchestrationService
     private KernelProcess BuildProcess(Guid ThreadId)
     {
         ProcessBuilder processBuilder = new("PartnershipAgent");
-        
+
         // Add steps using the native ProcessBuilder pattern
+        var scopingStep = processBuilder.AddStepFromType<ScopingStep>();
         var entityResolutionStep = processBuilder.AddStepFromType<EntityResolutionStep>();
         var documentSearchStep = processBuilder.AddStepFromType<DocumentSearchStep>();
         var responseGenerationStep = processBuilder.AddStepFromType<ResponseGenerationStep>();
         var userResponseStep = processBuilder.AddStepFromType<UserResponseStep>();
 
         // Configure event-driven flow using ProcessFunctionTargetBuilder (fixed based on working example)
+        // Start with scoping step
         processBuilder
             .OnInputEvent(AgentOrchestrationEvents.StartProcess)
+            .SendEventTo(new ProcessFunctionTargetBuilder(scopingStep, parameterName: "processModel"));
+
+        // If scoping passes, proceed to entity resolution
+        scopingStep
+            .OnEvent(AgentOrchestrationEvents.ScopingCompleted)
             .SendEventTo(new ProcessFunctionTargetBuilder(entityResolutionStep, parameterName: "processModel"));
+
+        // If scoping fails, skip to user response step
+        scopingStep
+            .OnEvent(AgentOrchestrationEvents.OutOfScope)
+            .SendEventTo(new ProcessFunctionTargetBuilder(userResponseStep, parameterName: "processModel"));
 
         entityResolutionStep
             .OnEvent(AgentOrchestrationEvents.EntityExtractionCompleted)

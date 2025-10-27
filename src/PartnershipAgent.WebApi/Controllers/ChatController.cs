@@ -16,12 +16,12 @@ namespace PartnershipAgent.WebApi.Controllers;
 [Route("api/[controller]")]
 public class ChatController : ControllerBase
 {
-    private readonly StepOrchestrationService _stepOrchestrationService;
+    private readonly WorkflowOrchestrationService _workflowOrchestrationService;
     private readonly ILogger<ChatController> _logger;
 
-    public ChatController(StepOrchestrationService stepOrchestrationService, ILogger<ChatController> logger)
+    public ChatController(WorkflowOrchestrationService workflowOrchestrationService, ILogger<ChatController> logger)
     {
-        _stepOrchestrationService = stepOrchestrationService;
+        _workflowOrchestrationService = workflowOrchestrationService;
         _logger = logger;
     }
 
@@ -43,8 +43,8 @@ public class ChatController : ControllerBase
 
         try
         {
-            // Process the query using the step orchestration service (Semantic Kernel process framework)
-            var chatResponse = await _stepOrchestrationService.ProcessRequestAsync(request);
+            // Process the query using the workflow orchestration service (Agent Framework v2)
+            var chatResponse = await _workflowOrchestrationService.ProcessRequestAsync(request);
             return Ok(chatResponse);
         }
         catch (Exception ex)
@@ -88,9 +88,9 @@ public class ChatController : ControllerBase
             await Response.WriteAsync($"data: {statusMessage}\n\n");
             await Response.Body.FlushAsync();
 
-            // Process the request with streaming enabled
+            // Process the request with streaming enabled (Agent Framework v2)
             _logger.LogInformation("CHATCONTROLLER: Calling ProcessRequestAsync with streaming channel for thread {ThreadId}", request.ThreadId);
-            var chatResponse = await _stepOrchestrationService.ProcessRequestAsync(request, streamingChannel);
+            var chatResponse = await _workflowOrchestrationService.ProcessRequestAsync(request, streamingChannel);
             
             // Return final response
             var responseMessage = JsonSerializer.Serialize(new { 

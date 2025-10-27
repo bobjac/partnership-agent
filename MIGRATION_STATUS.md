@@ -2,7 +2,8 @@
 
 **Branch**: `wip/bobjac/af-migration-implement`
 **Started**: 2025-10-27
-**Status**: ✅ **MIGRATION COMPLETE** - Ready for Testing
+**Completed**: 2025-10-27
+**Status**: ✅ **MIGRATION COMPLETE & ACTIVE** - V2 Running in Controllers
 
 ---
 
@@ -53,6 +54,14 @@ Successfully migrated the Partnership Agent from **Semantic Kernel v1.48.0** to 
 - Registered all V2 agents in DI container
 - `IChatClient` shared across all Agent Framework agents
 - Both v1 (SK) and v2 (AF) services coexist for gradual migration
+
+### ✅ Phase 5: Controller Updates
+**Commits**: `977dce6`
+
+- **ChatController now uses WorkflowOrchestrationService (V2)** 🎉
+- Updated both standard and streaming endpoints
+- Zero breaking changes to API surface
+- AdminController unchanged (doesn't use orchestration)
 
 ---
 
@@ -115,10 +124,10 @@ Successfully migrated the Partnership Agent from **Semantic Kernel v1.48.0** to 
 
 ## What's Next (Optional Future Work)
 
-### Immediate (Not Required for Testing)
-1. **Update Controllers** - Switch from `StepOrchestrationService` to `WorkflowOrchestrationService`
-2. **Integration Testing** - Test complete end-to-end flows with V2 orchestration
-3. **Performance Testing** - Compare v1 vs v2 performance
+### Immediate (Recommended)
+1. ✅ ~~Update Controllers~~ - **DONE! ChatController now uses V2**
+2. **Integration Testing** - Test complete end-to-end flows with live API
+3. **Performance Testing** - Compare v1 vs v2 performance in production scenarios
 
 ### Future Cleanup (After V2 Validated)
 1. **Remove V1 Agents** - Delete Semantic Kernel agent classes
@@ -131,28 +140,27 @@ Successfully migrated the Partnership Agent from **Semantic Kernel v1.48.0** to 
 
 ## How to Test the Migration
 
-### Option 1: Use Existing Controller (V1)
-The current controllers still use `StepOrchestrationService` (V1). This should continue working.
+### ✅ V2 is Now Active!
+The ChatController now uses `WorkflowOrchestrationService` (V2). The API is live with Agent Framework!
 
-### Option 2: Test V2 Orchestration (Recommended)
-Create a test endpoint or update existing controller to use `WorkflowOrchestrationService`:
+### Test the Live API
 
-```csharp
-// In ChatController.cs
-public class ChatController : ControllerBase
-{
-    private readonly WorkflowOrchestrationService _orchestration; // Change this line
+```bash
+# Start the API
+dotnet run --project src/PartnershipAgent.WebApi
 
-    public ChatController(WorkflowOrchestrationService orchestration) // Change this line
-    {
-        _orchestration = orchestration;
-    }
+# Test standard endpoint
+curl -X POST http://localhost:5000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"threadId":"test-123","prompt":"What are the partnership revenue sharing tiers?"}'
 
-    // Rest stays the same - API is identical
-}
+# Test streaming endpoint
+curl -X POST http://localhost:5000/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"threadId":"test-456","prompt":"Tell me about partnership compliance requirements"}'
 ```
 
-### Option 3: Run Tests
+### Run Tests
 ```bash
 dotnet test
 ```

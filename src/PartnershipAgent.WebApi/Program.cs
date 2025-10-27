@@ -306,8 +306,11 @@ builder.Services.AddScoped<DocumentSearchStep>();
 builder.Services.AddScoped<ResponseGenerationStep>();
 builder.Services.AddScoped<UserResponseStep>();
 
-// Register the step orchestration service
+// Register the step orchestration service (v1 - Semantic Kernel)
 builder.Services.AddScoped<StepOrchestrationService>();
+
+// Register the workflow orchestration service (v2 - Agent Framework)
+builder.Services.AddScoped<WorkflowOrchestrationService>();
 
 // Register ground truth service
 builder.Services.AddSingleton<IGroundTruthService, GroundTruthService>();

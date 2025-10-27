@@ -54,7 +54,7 @@ public class StepOrchestrationService
         Activity.Current = null; // Set Activity.Current to null to force StartActivity to create a new root activity
 
         using var activity = _activitySource.StartActivity($"ThreadId: {request.ThreadId}", ActivityKind.Internal, parentId: default);
-        
+
         var processModel = new ProcessModel
         {
             ThreadId = Guid.TryParse(request.ThreadId, out var threadGuid) ? threadGuid : Guid.NewGuid(),
@@ -71,6 +71,10 @@ public class StepOrchestrationService
             activity?.SetTag("request.tenant_id", request.TenantId);
 
             _logger.LogInformation("Starting step orchestration for session {ThreadId}", processModel.ThreadId);
+
+            // Save the user's initial prompt to chat history
+            var chatHistoryService = _serviceProvider.GetRequiredService<IChatHistoryService>();
+            await chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.User, request.Prompt));
 
             // Build and execute the process using Semantic Kernel's native process framework
             var process = BuildProcess(processModel.ThreadId);
@@ -152,14 +156,14 @@ public class StepOrchestrationService
     /// <returns>The final chat response</returns>
     public async Task<ChatResponse> ProcessRequestAsync(ChatRequest request, IBidirectionalToClientChannel streamingChannel)
     {
-        _logger.LogInformation("ORCHESTRATION: ProcessRequestAsync called with streaming channel (not null: {NotNull}) for thread {ThreadId}", 
+        _logger.LogInformation("ORCHESTRATION: ProcessRequestAsync called with streaming channel (not null: {NotNull}) for thread {ThreadId}",
             streamingChannel != null, request.ThreadId);
-            
+
         var parent = Activity.Current;
         Activity.Current = null; // Set Activity.Current to null to force StartActivity to create a new root activity
 
         using var activity = _activitySource.StartActivity($"ThreadId: {request.ThreadId}", ActivityKind.Internal, parentId: default);
-        
+
         var processModel = new ProcessModel
         {
             ThreadId = Guid.TryParse(request.ThreadId, out var threadGuid) ? threadGuid : Guid.NewGuid(),
@@ -176,6 +180,10 @@ public class StepOrchestrationService
             activity?.SetTag("request.tenant_id", request.TenantId);
 
             _logger.LogInformation("Starting step orchestration for session {ThreadId}", processModel.ThreadId);
+
+            // Save the user's initial prompt to chat history
+            var chatHistoryService = _serviceProvider.GetRequiredService<IChatHistoryService>();
+            await chatHistoryService.AddMessageToChatHistoryAsync(processModel.ThreadId, new ChatMessageContent(AuthorRole.User, request.Prompt));
 
             // Build and execute the process using Semantic Kernel's native process framework
             var process = BuildProcess(processModel.ThreadId);

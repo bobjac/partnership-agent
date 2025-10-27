@@ -102,28 +102,31 @@ var elasticUsername = builder.Configuration["ElasticSearch:Username"];
 var elasticPassword = builder.Configuration["ElasticSearch:Password"];
 
 
+// Register IChatClient for Agent Framework (v2) agents
+builder.Services.AddSingleton<IChatClient>(provider =>
+{
+    var azureClient = new AzureOpenAIClient(new Uri(azureOpenAIEndpoint), new AzureKeyCredential(azureOpenAIApiKey));
+    var openAIChatClient = azureClient.GetChatClient(azureOpenAIDeploymentName);
+    return openAIChatClient.AsIChatClient();
+});
+
 builder.Services.AddScoped<IKernelBuilder>(provider =>
 {
     var kernelBuilder = Kernel.CreateBuilder();
-    
+
     // Configure Azure OpenAI with NO timeout for debugging
     var httpClient = new HttpClient();
     httpClient.Timeout = System.Threading.Timeout.InfiniteTimeSpan; // No timeout for debugging with breakpoints
-    
+
     kernelBuilder.AddAzureOpenAIChatCompletion(
         deploymentName: azureOpenAIDeploymentName,
         endpoint: azureOpenAIEndpoint,
         apiKey: azureOpenAIApiKey,
         httpClient: httpClient);
-    
-    // Register IChatClient for evaluation framework using AsIChatClient extension method
-    kernelBuilder.Services.AddSingleton<IChatClient>(provider =>
-    {
-        var azureClient = new AzureOpenAIClient(new Uri(azureOpenAIEndpoint), new AzureKeyCredential(azureOpenAIApiKey));
-        var openAIChatClient = azureClient.GetChatClient(azureOpenAIDeploymentName);
-        return openAIChatClient.AsIChatClient();
-    });
-    
+
+    // IChatClient already registered above for Agent Framework
+    kernelBuilder.Services.AddSingleton<IChatClient>(sp => provider.GetRequiredService<IChatClient>());
+
     return kernelBuilder;
 });
 
@@ -175,13 +178,63 @@ builder.Services.AddScoped<FAQAgent>(provider =>
     var citationService = provider.GetRequiredService<ICitationService>();
     var chatHistoryService = provider.GetRequiredService<IChatHistoryService>();
     var logger = provider.GetRequiredService<ILogger<FAQAgent>>();
-    
+
     // Create a simple IRequestedBy implementation for this context
     var requestedBy = new SimpleRequestedBy();
     var ThreadId = Guid.NewGuid();
-    
+
     return new FAQAgent(ThreadId, kernelBuilder, elasticSearchService, citationService, chatHistoryService, requestedBy, logger);
 });
+
+// ============================================================================
+// Agent Framework (v2) Agents - Migration Target
+// ============================================================================
+
+builder.Services.AddScoped<ScopingAgentV2>(provider =>
+{
+    var chatClient = provider.GetRequiredService<IChatClient>();
+    var logger = provider.GetRequiredService<ILogger<ScopingAgentV2>>();
+    var requestedBy = new SimpleRequestedBy();
+    var threadId = Guid.NewGuid();
+
+    return new ScopingAgentV2(threadId, chatClient, requestedBy, logger);
+});
+
+builder.Services.AddScoped<EntityResolutionAgentV2>(provider =>
+{
+    var chatClient = provider.GetRequiredService<IChatClient>();
+    var logger = provider.GetRequiredService<ILogger<EntityResolutionAgentV2>>();
+    var requestedBy = new SimpleRequestedBy();
+    var threadId = Guid.NewGuid();
+
+    return new EntityResolutionAgentV2(threadId, chatClient, requestedBy, logger);
+});
+
+builder.Services.AddScoped<DocumentSearchAgentV2>(provider =>
+{
+    var chatClient = provider.GetRequiredService<IChatClient>();
+    var elasticSearchService = provider.GetRequiredService<IElasticSearchService>();
+    var logger = provider.GetRequiredService<ILogger<DocumentSearchAgentV2>>();
+    var requestedBy = new SimpleRequestedBy();
+    var threadId = Guid.NewGuid();
+
+    return new DocumentSearchAgentV2(threadId, chatClient, elasticSearchService, requestedBy, logger);
+});
+
+builder.Services.AddScoped<ResponseGenerationAgentV2>(provider =>
+{
+    var chatClient = provider.GetRequiredService<IChatClient>();
+    var citationService = provider.GetRequiredService<ICitationService>();
+    var chatHistoryService = provider.GetRequiredService<IChatHistoryService>();
+    var logger = provider.GetRequiredService<ILogger<ResponseGenerationAgentV2>>();
+    var requestedBy = new SimpleRequestedBy();
+    var threadId = Guid.NewGuid();
+
+    return new ResponseGenerationAgentV2(threadId, chatClient, citationService, chatHistoryService, requestedBy, logger);
+});
+
+// ============================================================================
+
 builder.Services.AddScoped<IElasticSearchService, ElasticSearchService>();
 builder.Services.AddScoped<ICitationService, CitationService>();
 

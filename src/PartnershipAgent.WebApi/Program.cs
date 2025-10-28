@@ -3,8 +3,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
 using Nest;
 using OpenTelemetry;
 using Azure.Monitor.OpenTelemetry.Exporter;
@@ -14,15 +12,8 @@ using OpenTelemetry.Trace;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Services;
-using PartnershipAgent.Core.Steps;
 using System;
-using System.Net.Http;
 using Microsoft.Extensions.AI;
-using OpenAI;
-using Azure.AI.OpenAI;
-using Azure;
-using Azure.Core;
-using System.ClientModel;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -105,35 +96,14 @@ var elasticPassword = builder.Configuration["ElasticSearch:Password"];
 // Register IChatClient for Agent Framework (v2) agents
 builder.Services.AddSingleton<IChatClient>(provider =>
 {
-    var azureClient = new AzureOpenAIClient(new Uri(azureOpenAIEndpoint), new AzureKeyCredential(azureOpenAIApiKey));
-    var openAIChatClient = azureClient.GetChatClient(azureOpenAIDeploymentName);
-    return openAIChatClient.AsIChatClient();
-});
-
-builder.Services.AddScoped<IKernelBuilder>(provider =>
-{
-    var kernelBuilder = Kernel.CreateBuilder();
-
-    // Configure Azure OpenAI with NO timeout for debugging
-    var httpClient = new HttpClient();
-    httpClient.Timeout = System.Threading.Timeout.InfiniteTimeSpan; // No timeout for debugging with breakpoints
-
-    kernelBuilder.AddAzureOpenAIChatCompletion(
-        deploymentName: azureOpenAIDeploymentName,
-        endpoint: azureOpenAIEndpoint,
-        apiKey: azureOpenAIApiKey,
-        httpClient: httpClient);
-
-    // IChatClient already registered above for Agent Framework
-    kernelBuilder.Services.AddSingleton<IChatClient>(sp => provider.GetRequiredService<IChatClient>());
-
-    return kernelBuilder;
-});
-
-builder.Services.AddScoped(provider =>
-{
-    var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
-    return kernelBuilder.Build();
+    var chatClient = new OpenAI.Chat.ChatClient(
+        model: azureOpenAIDeploymentName,
+        credential: new System.ClientModel.ApiKeyCredential(azureOpenAIApiKey),
+        options: new OpenAI.OpenAIClientOptions()
+        {
+            Endpoint = new Uri(azureOpenAIEndpoint)
+        });
+    return chatClient.AsIChatClient();
 });
 
 var settings = new ConnectionSettings(new Uri(elasticSearchUri))
@@ -147,47 +117,8 @@ if (!string.IsNullOrEmpty(elasticUsername) && !string.IsNullOrEmpty(elasticPassw
 
 builder.Services.AddSingleton<IElasticClient>(new ElasticClient(settings));
 
-builder.Services.AddScoped<ScopingAgent>(provider =>
-{
-    var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
-    var logger = provider.GetRequiredService<ILogger<ScopingAgent>>();
-
-    // Create a simple IRequestedBy implementation for this context
-    var requestedBy = new SimpleRequestedBy();
-    var ThreadId = Guid.NewGuid();
-
-    return new ScopingAgent(ThreadId, kernelBuilder, requestedBy, logger);
-});
-
-builder.Services.AddScoped<EntityResolutionAgent>(provider =>
-{
-    var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
-    var logger = provider.GetRequiredService<ILogger<EntityResolutionAgent>>();
-
-    // Create a simple IRequestedBy implementation for this context
-    var requestedBy = new SimpleRequestedBy();
-    var ThreadId = Guid.NewGuid();
-
-    return new EntityResolutionAgent(ThreadId, kernelBuilder, requestedBy, logger);
-});
-
-builder.Services.AddScoped<FAQAgent>(provider =>
-{
-    var kernelBuilder = provider.GetRequiredService<IKernelBuilder>();
-    var elasticSearchService = provider.GetRequiredService<IElasticSearchService>();
-    var citationService = provider.GetRequiredService<ICitationService>();
-    var chatHistoryService = provider.GetRequiredService<IChatHistoryService>();
-    var logger = provider.GetRequiredService<ILogger<FAQAgent>>();
-
-    // Create a simple IRequestedBy implementation for this context
-    var requestedBy = new SimpleRequestedBy();
-    var ThreadId = Guid.NewGuid();
-
-    return new FAQAgent(ThreadId, kernelBuilder, elasticSearchService, citationService, chatHistoryService, requestedBy, logger);
-});
-
 // ============================================================================
-// Agent Framework (v2) Agents - Migration Target
+// Agent Framework (v2) Agents
 // ============================================================================
 
 builder.Services.AddScoped<ScopingAgentV2>(provider =>
@@ -270,12 +201,6 @@ switch (chatHistoryProvider.ToLowerInvariant())
         break;
 }
 
-// Register the response channel
-builder.Services.AddScoped<IBidirectionalToClientChannel, SimpleBidirectionalChannel>();
-
-// Register the process response collector
-builder.Services.AddSingleton<ProcessResponseCollector>();
-
 // Register vector search services
 builder.Services.AddScoped<IVectorSearchService, AzureVectorSearchService>();
 builder.Services.AddScoped<DocumentIndexingService>();
@@ -299,17 +224,7 @@ else
     Console.WriteLine("[SEARCH] Using traditional Elasticsearch");
 }
 
-// Register the individual step classes
-builder.Services.AddScoped<ScopingStep>();
-builder.Services.AddScoped<EntityResolutionStep>();
-builder.Services.AddScoped<DocumentSearchStep>();
-builder.Services.AddScoped<ResponseGenerationStep>();
-builder.Services.AddScoped<UserResponseStep>();
-
-// Register the step orchestration service (v1 - Semantic Kernel)
-builder.Services.AddScoped<StepOrchestrationService>();
-
-// Register the workflow orchestration service (v2 - Agent Framework)
+// Register the workflow orchestration service (Agent Framework)
 builder.Services.AddScoped<WorkflowOrchestrationService>();
 
 // Register ground truth service

@@ -126,13 +126,14 @@ Successfully migrated the Partnership Agent from **Semantic Kernel v1.48.0** to 
 
 ### Immediate (Recommended)
 1. ✅ ~~Update Controllers~~ - **DONE! ChatController now uses V2**
-2. **Integration Testing** - Test complete end-to-end flows with live API
-3. **Performance Testing** - Compare v1 vs v2 performance in production scenarios
+2. ✅ ~~Fix Package Version Conflicts~~ - **DONE! WebApi uses OpenAI 2.5.0**
+3. **Integration Testing** - Test complete end-to-end flows with live API
+4. **Performance Testing** - Compare v1 vs v2 performance in production scenarios
 
 ### Future Cleanup (After V2 Validated)
-1. **Remove V1 Agents** - Delete Semantic Kernel agent classes
+1. **Remove V1 Agents from Core** - Delete Semantic Kernel agent classes from Core project
 2. **Remove KernelProcessStep Classes** - Delete all 5 step implementations
-3. **Remove SK Packages** - Clean up Semantic Kernel dependencies
+3. **Remove SK Packages from Core** - Clean up Semantic Kernel dependencies from Core
 4. **Rename V2 Agents** - Remove "V2" suffix once V1 is deleted
 5. **Update Tests** - Create V2-specific tests
 
@@ -215,6 +216,12 @@ If issues are discovered:
 ---
 
 ## Technical Notes
+
+### Package Version Resolution
+- **Issue**: Semantic Kernel 1.48.0 requires OpenAI 2.2.0-beta.4, but Microsoft.Extensions.AI.OpenAI requires OpenAI 2.5.0
+- **Solution**: Removed Semantic Kernel from WebApi project, keeping only in Core project
+- **Result**: WebApi uses OpenAI 2.5.0 with Agent Framework v2; Core maintains both versions for backward compatibility
+- **Warning**: Core project still shows NU1608 warnings (expected until v1 agents are fully removed)
 
 ### Streaming Implementation
 - **V1 (SK)**: `InvokeStreamingAsync()` returns `IAsyncEnumerable<StreamingChatMessageContent>`

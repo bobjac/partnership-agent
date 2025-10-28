@@ -144,16 +144,11 @@ Successfully migrated the Partnership Agent from **Semantic Kernel v1.48.0** to 
 ### ✅ V2 is Now Active!
 The ChatController now uses `WorkflowOrchestrationService` (V2). The API is live with Agent Framework!
 
-### Test the Live API
+### Option 1: Quick Local Test (InMemory)
 
 ```bash
-# Start the API
-dotnet run --project src/PartnershipAgent.WebApi
-
-# Test standard endpoint
-curl -X POST http://localhost:5000/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"threadId":"test-123","prompt":"What are the partnership revenue sharing tiers?"}'
+# Start the API with InMemory chat history
+ChatHistory__Provider=InMemory dotnet run --project src/PartnershipAgent.WebApi
 
 # Test streaming endpoint
 curl -X POST http://localhost:5000/api/chat/stream \
@@ -161,7 +156,27 @@ curl -X POST http://localhost:5000/api/chat/stream \
   -d '{"threadId":"test-456","prompt":"Tell me about partnership compliance requirements"}'
 ```
 
-### Run Tests
+**Note**: With no documents indexed, you'll see "couldn't find any relevant documents" - this is expected.
+
+### Option 2: Azure Live Test (Recommended)
+
+Test with full Azure infrastructure (Azure SQL + Azure AI Search + sample documents):
+
+```bash
+# Run interactive setup script
+./setup/test-azure-live.sh
+```
+
+This script will:
+- Configure Azure OpenAI, Azure AI Search, and Azure SQL
+- Start the API with full Azure integration
+- Index sample partnership documents to Azure AI Search
+- Run test queries showing Agent Framework v2 in action
+- Persist chat history to Azure SQL
+
+See **[setup/AZURE_SETUP.md](setup/AZURE_SETUP.md)** for detailed instructions and troubleshooting.
+
+### Run Unit Tests
 ```bash
 dotnet test
 ```

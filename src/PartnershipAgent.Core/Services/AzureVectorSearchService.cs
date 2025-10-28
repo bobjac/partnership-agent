@@ -2,9 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.ClientModel;
 using Azure;
-using Azure.AI.OpenAI;
-using Azure.Core.Pipeline;
 using Azure.Search.Documents;
 using Azure.Search.Documents.Indexes;
 using Azure.Search.Documents.Indexes.Models;
@@ -12,6 +11,7 @@ using Azure.Search.Documents.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OpenAI;
+using OpenAI.Embeddings;
 using PartnershipAgent.Core.Models;
 
 namespace PartnershipAgent.Core.Services
@@ -24,8 +24,7 @@ namespace PartnershipAgent.Core.Services
     {
         private readonly SearchClient _searchClient;
         private readonly SearchIndexClient _indexClient;
-        private readonly AzureOpenAIClient _azureOpenAIClient;
-        private readonly string _embeddingDeploymentName;
+        private readonly EmbeddingClient _embeddingClient;
         private readonly ILogger<AzureVectorSearchService> _logger;
         private const string IndexName = "partnership-documents-vector";
         private const int EmbeddingDimensions = 1536; // text-embedding-ada-002
@@ -40,21 +39,30 @@ namespace PartnershipAgent.Core.Services
             var serviceName = configuration["AzureSearch:ServiceName"] ?? throw new InvalidOperationException("AzureSearch:ServiceName not configured");
             var searchEndpoint = $"https://{serviceName}.search.windows.net";
             var searchApiKey = configuration["AzureSearch:ApiKey"] ?? throw new InvalidOperationException("AzureSearch:ApiKey not configured");
-            
+
             var searchCredential = new AzureKeyCredential(searchApiKey);
             _searchClient = new SearchClient(new Uri(searchEndpoint), IndexName, searchCredential);
             _indexClient = new SearchIndexClient(new Uri(searchEndpoint), searchCredential);
 
-            // OpenAI configuration for embeddings
+            // OpenAI configuration for embeddings using OpenAI SDK 2.5.0
             var openAIEndpoint = configuration["AzureOpenAI:Endpoint"] ?? throw new InvalidOperationException("AzureOpenAI:Endpoint not configured");
             var openAIApiKey = configuration["AzureOpenAI:ApiKey"] ?? throw new InvalidOperationException("AzureOpenAI:ApiKey not configured");
-            _embeddingDeploymentName = configuration["AzureOpenAI:EmbeddingDeploymentName"] ?? "text-embedding-ada-002";
-            
-            // Create client options with infinite network timeout for embeddings
-            var clientOptions = new AzureOpenAIClientOptions();
-            clientOptions.NetworkTimeout = System.Threading.Timeout.InfiniteTimeSpan;
-            
-            _azureOpenAIClient = new AzureOpenAIClient(new Uri(openAIEndpoint), new AzureKeyCredential(openAIApiKey), clientOptions);
+            var embeddingDeploymentName = configuration["AzureOpenAI:EmbeddingDeploymentName"] ?? "text-embedding-ada-002";
+            var apiVersion = configuration["AzureOpenAI:ApiVersion"] ?? "2024-02-15-preview";
+
+            // For Azure OpenAI, construct the full deployment-specific endpoint
+            // Format: https://{resource}.openai.azure.com/openai/deployments/{deployment}/
+            var baseUri = new Uri(openAIEndpoint.TrimEnd('/'));
+            var azureEmbeddingEndpoint = new Uri(baseUri, $"openai/deployments/{embeddingDeploymentName}/");
+
+            // Use OpenAI SDK 2.5.0 with Azure-specific endpoint
+            _embeddingClient = new EmbeddingClient(
+                model: embeddingDeploymentName,
+                credential: new ApiKeyCredential(openAIApiKey),
+                options: new OpenAIClientOptions
+                {
+                    Endpoint = azureEmbeddingEndpoint
+                });
         }
 
         /// <summary>
@@ -255,9 +263,7 @@ namespace PartnershipAgent.Core.Services
         {
             try
             {
-                var embeddingClient = _azureOpenAIClient.GetEmbeddingClient(_embeddingDeploymentName);
-                var response = await embeddingClient.GenerateEmbeddingAsync(text);
-                
+                var response = await _embeddingClient.GenerateEmbeddingAsync(text);
                 return response.Value.ToFloats().ToArray();
             }
             catch (Exception ex)
@@ -276,12 +282,10 @@ namespace PartnershipAgent.Core.Services
             try
             {
                 _logger.LogInformation("Generating embeddings for {Count} texts in batch", texts.Count);
-                
-                var embeddingClient = _azureOpenAIClient.GetEmbeddingClient(_embeddingDeploymentName);
-                var response = await embeddingClient.GenerateEmbeddingsAsync(texts);
-                
+
+                var response = await _embeddingClient.GenerateEmbeddingsAsync(texts);
                 var embeddings = response.Value.Select(embedding => embedding.ToFloats().ToArray()).ToList();
-                
+
                 _logger.LogInformation("Successfully generated {Count} embeddings in batch", embeddings.Count);
                 return embeddings;
             }

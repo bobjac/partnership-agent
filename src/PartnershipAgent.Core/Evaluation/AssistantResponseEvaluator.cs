@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.AI.Evaluation;
 using Microsoft.Extensions.AI.Evaluation.Quality;
-using Microsoft.SemanticKernel;
 using PartnershipAgent.Core.Services;
 
 namespace PartnershipAgent.Core.Evaluation
@@ -16,12 +15,12 @@ namespace PartnershipAgent.Core.Evaluation
     /// </summary>
     public class AssistantResponseEvaluator : IAssistantResponseEvaluator
     {
-        private readonly Kernel _kernel;
+        private readonly IChatClient _chatClient;
         private readonly IGroundTruthService _groundTruthService;
 
-        public AssistantResponseEvaluator(Kernel kernel, IGroundTruthService groundTruthService)
+        public AssistantResponseEvaluator(IChatClient chatClient, IGroundTruthService groundTruthService)
         {
-            _kernel = kernel;
+            _chatClient = chatClient;
             _groundTruthService = groundTruthService;
         }
 
@@ -104,9 +103,8 @@ namespace PartnershipAgent.Core.Evaluation
             }
             */
 
-            // Create a basic ChatConfiguration using the kernel's chat completion service
-            var chatClient = _kernel.GetRequiredService<IChatClient>();
-            var chatConfiguration = new ChatConfiguration(chatClient);
+            // Create a basic ChatConfiguration using the chat client
+            var chatConfiguration = new ChatConfiguration(_chatClient);
 
             // Evaluate response using composite evaluator
             var compositeEvaluator = new CompositeEvaluator(evaluators);

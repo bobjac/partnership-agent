@@ -91,7 +91,7 @@ traces
 Each AI interaction generates the following telemetry tags:
 
 - `gen_ai.full_nl_response`: The complete AI response text
-- `gen_ai.evaluation.module`: Which AI component generated the response (e.g., "FAQAgent", "EntityResolutionAgent")
+- `gen_ai.evaluation.module`: Which AI component generated the response (e.g., "ResponseGenerationAgentV2", "EntityResolutionAgentV2")
 - `gen_ai.evaluation.user_prompt`: The original user input
 - `gen_ai.evaluation.Coherence.score`: Coherence evaluation score (0.0-1.0)
 - `gen_ai.evaluation.Fluency.score`: Fluency evaluation score (0.0-1.0)

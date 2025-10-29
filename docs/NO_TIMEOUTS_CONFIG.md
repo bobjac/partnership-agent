@@ -54,11 +54,11 @@ When running the console app, you should see:
 
 ## Benefits for Debugging
 
-✅ **No 100-second HttpClient timeout**  
-✅ **No Kestrel server timeouts**  
-✅ **No Azure OpenAI API timeouts**  
-✅ **Can set breakpoints anywhere without timeout errors**  
-✅ **Can debug step-by-step through Semantic Kernel processes**  
+✅ **No 100-second HttpClient timeout**
+✅ **No Kestrel server timeouts**
+✅ **No Azure OpenAI API timeouts**
+✅ **Can set breakpoints anywhere without timeout errors**
+✅ **Can debug step-by-step through Agent Framework agents**
 ✅ **Can pause execution indefinitely during debugging**  
 
 ## Production Considerations

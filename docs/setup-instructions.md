@@ -201,20 +201,23 @@ Health check endpoint
 
 ## 🏗️ Architecture Overview
 
-The application uses a Semantic Kernel Process Framework with enhanced citation capabilities:
+The application uses **Microsoft Agent Framework v1.0** for intelligent agent orchestration with enhanced citation capabilities:
 
 ### Core Components:
-1. **EntityResolutionAgent**: Extracts entities like company names, dates, financial amounts
-2. **FAQAgent**: Searches documents and generates responses with citations
-3. **CitationService**: Extracts precise text excerpts and relevance scores
-4. **ElasticsearchService**: Enhanced document indexing and search
+1. **ScopingAgentV2**: Determines if queries are in-scope using structured JSON output
+2. **EntityResolutionAgentV2**: Extracts entities (companies, dates, financial terms) with LLM-based extraction
+3. **DocumentSearchAgentV2**: Searches relevant documents with vector or text-based search
+4. **ResponseGenerationAgentV2**: Generates comprehensive responses with citations and streaming support
+5. **CitationService**: Extracts precise text excerpts with relevance scores
+6. **Search Services**: Azure AI Search (vector) or Elasticsearch (text-based)
 
-### Citation Processing Flow:
-1. User sends prompt → EntityResolutionAgent extracts entities
-2. FAQAgent searches for relevant documents based on tenant permissions
-3. CitationService analyzes documents and extracts relevant excerpts
-4. FAQAgent generates response with detailed citations
-5. Response includes structured citations with precise positioning
+### Agent Workflow:
+1. User sends prompt → **ScopingAgent** validates request is partnership-related
+2. **EntityResolutionAgent** extracts key entities using structured output
+3. **DocumentSearchAgent** finds relevant documents based on tenant permissions
+4. **CitationService** analyzes documents and extracts relevant excerpts
+5. **ResponseGenerationAgent** creates answer with detailed citations
+6. Response includes structured JSON with precise positioning and confidence scores
 
 ### Enhanced Document Structure:
 - **Rich metadata**: Source paths, modification dates, versioning

@@ -41,4 +41,18 @@
     <EmbeddedResource Include="Data\GroundTruthData.csv" />
   </ItemGroup>
 
+  <!-- Exclude old Semantic Kernel agents/services from build (replaced by V2 Agent Framework versions) -->
+  <ItemGroup>
+    <Compile Remove="Agents\FAQAgent.cs" />
+    <Compile Remove="Agents\ScopingAgent.cs" />
+    <Compile Remove="Agents\EntityResolutionAgent.cs" />
+    <Compile Remove="Agents\BaseChatHistoryAgent.cs" />
+    <Compile Remove="Services\WorkflowOrchestrationService.cs" />
+    <Compile Remove="Services\StepOrchestrationService.cs" />
+    <Compile Remove="Steps\ScopingStep.cs" />
+    <Compile Remove="Steps\EntityResolutionStep.cs" />
+    <Compile Remove="Steps\DocumentSearchStep.cs" />
+    <Compile Remove="Steps\ResponseGenerationStep.cs" />
+  </ItemGroup>
+
 </Project>

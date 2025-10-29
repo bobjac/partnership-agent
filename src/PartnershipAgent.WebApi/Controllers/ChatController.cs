@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using PartnershipAgent.Core.Models;
 using PartnershipAgent.Core.Services;
 using PartnershipAgent.Core.Steps;
+using PartnershipAgent.Core.Workflows;
 using PartnershipAgent.WebApi;
 
 namespace PartnershipAgent.WebApi.Controllers;
@@ -16,12 +17,12 @@ namespace PartnershipAgent.WebApi.Controllers;
 [Route("api/[controller]")]
 public class ChatController : ControllerBase
 {
-    private readonly WorkflowOrchestrationService _workflowOrchestrationService;
+    private readonly PartnershipWorkflowService _workflowService;
     private readonly ILogger<ChatController> _logger;
 
-    public ChatController(WorkflowOrchestrationService workflowOrchestrationService, ILogger<ChatController> logger)
+    public ChatController(PartnershipWorkflowService workflowService, ILogger<ChatController> logger)
     {
-        _workflowOrchestrationService = workflowOrchestrationService;
+        _workflowService = workflowService;
         _logger = logger;
     }
 
@@ -43,8 +44,8 @@ public class ChatController : ControllerBase
 
         try
         {
-            // Process the query using the workflow orchestration service (Agent Framework v2)
-            var chatResponse = await _workflowOrchestrationService.ProcessRequestAsync(request);
+            // Process the query using the workflow service (Agent Framework v2 with WorkflowBuilder)
+            var chatResponse = await _workflowService.ProcessRequestAsync(request);
             return Ok(chatResponse);
         }
         catch (Exception ex)
@@ -88,9 +89,9 @@ public class ChatController : ControllerBase
             await Response.WriteAsync($"data: {statusMessage}\n\n");
             await Response.Body.FlushAsync();
 
-            // Process the request with streaming enabled (Agent Framework v2)
-            _logger.LogInformation("CHATCONTROLLER: Calling ProcessRequestAsync with streaming channel for thread {ThreadId}", request.ThreadId);
-            var chatResponse = await _workflowOrchestrationService.ProcessRequestAsync(request, streamingChannel);
+            // Process the request with streaming enabled (Agent Framework v2 with WorkflowBuilder)
+            _logger.LogInformation("CHATCONTROLLER: Calling ProcessRequestWithStreamingAsync for thread {ThreadId}", request.ThreadId);
+            var chatResponse = await _workflowService.ProcessRequestWithStreamingAsync(request, streamingChannel);
             
             // Return final response
             var responseMessage = JsonSerializer.Serialize(new { 

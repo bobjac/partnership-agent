@@ -11,6 +11,8 @@ public class ScopingAgentResponse
 {
     /// <summary>
     /// Indicates whether the user's request is in scope for the partnership agent.
+    /// CRITICAL: Set to true if the question mentions partnership, revenue, tier, agreement, contract, payment, partner, company, vendor, pricing, fees, commissions, compliance, regulations, terms, conditions, or onboarding.
+    /// Set to false only for clearly unrelated topics like jokes, weather, sports, entertainment.
     /// </summary>
     [JsonPropertyName("isInScope")]
     public bool IsInScope { get; set; }

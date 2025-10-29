@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
-using System.ClientModel;
 using Azure;
 using Azure.Search.Documents;
 using Azure.Search.Documents.Indexes;
@@ -10,8 +13,6 @@ using Azure.Search.Documents.Indexes.Models;
 using Azure.Search.Documents.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using OpenAI;
-using OpenAI.Embeddings;
 using PartnershipAgent.Core.Models;
 
 namespace PartnershipAgent.Core.Services
@@ -24,7 +25,9 @@ namespace PartnershipAgent.Core.Services
     {
         private readonly SearchClient _searchClient;
         private readonly SearchIndexClient _indexClient;
-        private readonly EmbeddingClient _embeddingClient;
+        private readonly HttpClient _httpClient;
+        private readonly string _embeddingEndpoint;
+        private readonly string _embeddingApiKey;
         private readonly ILogger<AzureVectorSearchService> _logger;
         private const string IndexName = "partnership-documents-vector";
         private const int EmbeddingDimensions = 1536; // text-embedding-ada-002
@@ -44,25 +47,19 @@ namespace PartnershipAgent.Core.Services
             _searchClient = new SearchClient(new Uri(searchEndpoint), IndexName, searchCredential);
             _indexClient = new SearchIndexClient(new Uri(searchEndpoint), searchCredential);
 
-            // OpenAI configuration for embeddings using OpenAI SDK 2.5.0
+            // Azure OpenAI configuration for embeddings - using direct REST API to avoid SDK conflicts
             var openAIEndpoint = configuration["AzureOpenAI:Endpoint"] ?? throw new InvalidOperationException("AzureOpenAI:Endpoint not configured");
-            var openAIApiKey = configuration["AzureOpenAI:ApiKey"] ?? throw new InvalidOperationException("AzureOpenAI:ApiKey not configured");
+            _embeddingApiKey = configuration["AzureOpenAI:ApiKey"] ?? throw new InvalidOperationException("AzureOpenAI:ApiKey not configured");
             var embeddingDeploymentName = configuration["AzureOpenAI:EmbeddingDeploymentName"] ?? "text-embedding-ada-002";
             var apiVersion = configuration["AzureOpenAI:ApiVersion"] ?? "2024-02-15-preview";
 
-            // For Azure OpenAI, construct the full deployment-specific endpoint
-            // Format: https://{resource}.openai.azure.com/openai/deployments/{deployment}/
+            // Construct embedding endpoint: https://{resource}.openai.azure.com/openai/deployments/{deployment}/embeddings?api-version={version}
             var baseUri = new Uri(openAIEndpoint.TrimEnd('/'));
-            var azureEmbeddingEndpoint = new Uri(baseUri, $"openai/deployments/{embeddingDeploymentName}/");
+            _embeddingEndpoint = $"{baseUri}/openai/deployments/{embeddingDeploymentName}/embeddings?api-version={apiVersion}";
 
-            // Use OpenAI SDK 2.5.0 with Azure-specific endpoint
-            _embeddingClient = new EmbeddingClient(
-                model: embeddingDeploymentName,
-                credential: new ApiKeyCredential(openAIApiKey),
-                options: new OpenAIClientOptions
-                {
-                    Endpoint = azureEmbeddingEndpoint
-                });
+            // Create HTTP client for direct REST API calls
+            _httpClient = new HttpClient();
+            _httpClient.DefaultRequestHeaders.Add("api-key", _embeddingApiKey);
         }
 
         /// <summary>
@@ -263,8 +260,21 @@ namespace PartnershipAgent.Core.Services
         {
             try
             {
-                var response = await _embeddingClient.GenerateEmbeddingAsync(text);
-                return response.Value.ToFloats().ToArray();
+                var requestBody = new
+                {
+                    input = text
+                };
+
+                var response = await _httpClient.PostAsJsonAsync(_embeddingEndpoint, requestBody);
+                response.EnsureSuccessStatusCode();
+
+                var result = await response.Content.ReadFromJsonAsync<EmbeddingResponse>();
+                if (result?.Data == null || result.Data.Count == 0)
+                {
+                    throw new InvalidOperationException("Empty embedding response from Azure OpenAI");
+                }
+
+                return result.Data[0].Embedding.ToArray();
             }
             catch (Exception ex)
             {
@@ -283,8 +293,21 @@ namespace PartnershipAgent.Core.Services
             {
                 _logger.LogInformation("Generating embeddings for {Count} texts in batch", texts.Count);
 
-                var response = await _embeddingClient.GenerateEmbeddingsAsync(texts);
-                var embeddings = response.Value.Select(embedding => embedding.ToFloats().ToArray()).ToList();
+                var requestBody = new
+                {
+                    input = texts
+                };
+
+                var response = await _httpClient.PostAsJsonAsync(_embeddingEndpoint, requestBody);
+                response.EnsureSuccessStatusCode();
+
+                var result = await response.Content.ReadFromJsonAsync<EmbeddingResponse>();
+                if (result?.Data == null || result.Data.Count == 0)
+                {
+                    throw new InvalidOperationException("Empty embedding response from Azure OpenAI");
+                }
+
+                var embeddings = result.Data.Select(d => d.Embedding.ToArray()).ToList();
 
                 _logger.LogInformation("Successfully generated {Count} embeddings in batch", embeddings.Count);
                 return embeddings;
@@ -299,14 +322,27 @@ namespace PartnershipAgent.Core.Services
         private static string BuildFilter(string tenantId, List<string>? allowedCategories)
         {
             var filters = new List<string> { $"tenantId eq '{tenantId}'" };
-            
+
             if (allowedCategories?.Any() == true)
             {
                 var categoryFilter = string.Join(" or ", allowedCategories.Select(c => $"category eq '{c}'"));
                 filters.Add($"({categoryFilter})");
             }
-            
+
             return string.Join(" and ", filters);
+        }
+
+        // Response models for Azure OpenAI Embeddings REST API
+        private class EmbeddingResponse
+        {
+            [JsonPropertyName("data")]
+            public List<EmbeddingData> Data { get; set; } = new();
+        }
+
+        private class EmbeddingData
+        {
+            [JsonPropertyName("embedding")]
+            public List<float> Embedding { get; set; } = new();
         }
     }
 }

@@ -46,52 +46,57 @@ public class ScopingAgentV2 : BaseAgent, IScopingAgent
 
     /// <summary>
     /// Initializes the ChatClientAgent with the appropriate settings and instructions.
+    /// Configures structured JSON output for reliable scoping decisions.
     /// </summary>
     private void InitializeAgent()
     {
         var instructions = @"
-            You are a scoping assistant that determines whether user requests are appropriate for a partnership agreement management system.
+You are a scoping assistant for a partnership agreement management system.
 
-            IN SCOPE requests include:
-            - Questions about partnership agreements, contracts, and business relationships
-            - Queries about revenue sharing, partnership tiers, terms, and conditions
-            - Questions about specific companies, partners, or partnership arrangements
-            - Document searches related to partnerships, agreements, or business relationships
-            - Partnership metrics, KPIs, and performance data
-            - Partnership compliance, regulations, and legal matters
-            - Financial aspects of partnerships (payments, fees, revenue splits)
-            - Partnership lifecycle questions (onboarding, renewal, termination)
+Classify user questions as IN SCOPE or OUT OF SCOPE:
 
-            OUT OF SCOPE requests include:
-            - Jokes, entertainment, or casual conversation
-            - General knowledge questions unrelated to partnerships or business
-            - Personal advice or counseling
-            - Technical support for non-partnership systems
-            - Creative writing requests
-            - Mathematical calculations unrelated to partnership metrics
-            - Code generation or programming help (unless specifically for partnership systems)
-            - Any topic clearly unrelated to business partnerships
+IN SCOPE - Questions about:
+- Partnerships, agreements, contracts, business relationships
+- Revenue, payments, tiers, fees, pricing, commissions
+- Partners, companies, vendors
+- Terms, conditions, compliance, regulations
+- Partnership lifecycle (onboarding, renewal, termination)
 
-            For each user prompt, you must:
-            1. Determine if it is IN SCOPE or OUT OF SCOPE
-            2. Provide your confidence level (high/medium/low)
-            3. Explain your reasoning
-            4. Categorize the request (e.g., partnership_inquiry, financial_question, off_topic, general_chat, joke_request)
-            5. If OUT OF SCOPE, provide a polite message explaining what the system can help with
-            6. Suggest 2-3 example questions the user could ask that ARE in scope
+OUT OF SCOPE - Questions about:
+- Jokes, entertainment, casual conversation
+- Weather, sports, general trivia
+- Personal advice, creative writing
+- Unrelated technical support
 
-            Be strict but fair - when in doubt about borderline cases, lean toward IN SCOPE and let downstream agents handle specifics.
-        ";
+CRITICAL: If the question mentions 'partnership', 'revenue', 'tier', 'agreement', 'contract', 'payment', 'partner', or 'company', mark isInScope=true.
 
-        // Create the Agent Framework agent
+For out-of-scope requests, provide a helpful outOfScopeMessage and suggest 2-3 example questions.
+";
+
+        // Configure chat options with structured JSON output using type-based schema
+        var chatOptions = new ChatOptions
+        {
+            ResponseFormat = ChatResponseFormat.ForJsonSchema(
+                AIJsonUtilities.CreateJsonSchema(typeof(ScopingAgentResponse)),
+                "scoping_response",
+                "Scoping response for partnership agent requests"
+            )
+        };
+
+        // Create the Agent Framework agent with structured output
         Agent = new ChatClientAgent(
             _chatClient,
             new ChatClientAgentOptions
             {
                 Name = Name,
-                Instructions = instructions + "\n\nAlways respond with valid JSON matching the ScopingAgentResponse format."
+                Instructions = instructions
             });
+
+        // Store chat options to be used in RunAsync
+        _chatOptions = chatOptions;
     }
+
+    private ChatOptions? _chatOptions;
 
     /// <summary>
     /// Evaluates whether a user prompt is in scope for the partnership agent.
@@ -104,15 +109,15 @@ public class ScopingAgentV2 : BaseAgent, IScopingAgent
 
         try
         {
-            var agentMessage = $"""
-                User Request: {prompt}
+            var agentMessage = $"User Request: {prompt}";
 
-                Please determine if this request is in scope for a partnership agreement management system.
-                Respond with a structured JSON response indicating whether it's in scope.
-                """;
+            // Use Agent Framework RunAsync with structured output configuration
+            var options = new ChatClientAgentRunOptions
+            {
+                ChatOptions = _chatOptions
+            };
 
-            // Use Agent Framework RunAsync instead of InvokeAsync
-            var response = await RunAsync(agentMessage);
+            var response = await RunAsync(agentMessage, options: options);
 
             if (string.IsNullOrWhiteSpace(response.Text))
             {
@@ -122,6 +127,7 @@ public class ScopingAgentV2 : BaseAgent, IScopingAgent
 
             try
             {
+                // With structured output, the response is guaranteed to match the schema
                 var scopingResponse = JsonSerializer.Deserialize<ScopingAgentResponse>(
                     response.Text,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true }

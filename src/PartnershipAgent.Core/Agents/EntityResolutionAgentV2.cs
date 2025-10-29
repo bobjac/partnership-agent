@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Microsoft.Agents.AI;
@@ -45,33 +46,43 @@ public class EntityResolutionAgentV2 : BaseAgent
 
     /// <summary>
     /// Initializes the ChatClientAgent with the appropriate settings and instructions.
+    /// Configures structured JSON output for reliable entity extraction.
     /// </summary>
     private void InitializeAgent()
     {
         var instructions = @"
-            You are a helpful assistant that extracts entities from user text about partnership agreements and business documents.
+You are an entity extraction assistant for a partnership agreement management system.
 
-            Always respond with:
-            - The original prompt that was analyzed
-            - List of extracted entities with their types and confidence scores
-            - Your confidence level (high/medium/low) in the extraction quality
-            - Whether meaningful entities were found
-            - A brief summary of the types of entities discovered
-            - Suggestions for improving the query if needed
+Extract relevant entities from user questions about partnerships, contracts, and business relationships.
 
-            Focus on extracting:
-            - Company names and organizations
-            - Person names and roles
-            - Contract terms and legal concepts
-            - Dates and time periods
-            - Financial amounts and percentages
-            - Partnership-related terminology
-            - Business metrics and KPIs
+Entity Types to Extract:
+- company: Company names, organizations, vendors
+- person: Person names, roles, contacts
+- partnership_term: Partnership-specific terminology
+- financial: Dollar amounts, percentages, financial terms
+- date: Dates, time periods, deadlines
+- contract_term: Legal concepts, agreement terms
+- metric: Business KPIs, performance indicators
+- general: Other relevant terms
 
-            Provide confidence scores from 0.0 to 1.0 for each entity based on how certain you are about the extraction.
+Confidence Scoring (0.0 to 1.0):
+- 0.9-1.0: Highly certain (explicit company name, clear financial amount)
+- 0.7-0.9: Moderately certain (likely partnership term, probable metric)
+- 0.5-0.7: Uncertain (ambiguous term, requires context)
+- Below 0.5: Low confidence
 
-            Always respond with valid JSON matching the EntityResolutionResponse format.
-        ";
+Extract only meaningful entities. If no significant entities exist, return an empty list.
+";
+
+        // Configure chat options with structured JSON output using type-based schema
+        var chatOptions = new ChatOptions
+        {
+            ResponseFormat = ChatResponseFormat.ForJsonSchema(
+                AIJsonUtilities.CreateJsonSchema(typeof(EntityResolutionResponse)),
+                "entity_extraction_response",
+                "Entity extraction response for partnership queries"
+            )
+        };
 
         Agent = new ChatClientAgent(
             _chatClient,
@@ -80,7 +91,11 @@ public class EntityResolutionAgentV2 : BaseAgent
                 Name = Name,
                 Instructions = instructions
             });
+
+        _chatOptions = chatOptions;
     }
+
+    private ChatOptions? _chatOptions;
 
     /// <summary>
     /// Extracts entities from the provided text using LLM analysis.
@@ -93,78 +108,48 @@ public class EntityResolutionAgentV2 : BaseAgent
 
         try
         {
-            var entities = new List<ExtractedEntity>();
+            var agentMessage = $"Extract entities from: {prompt}";
 
-            // Simple entity extraction logic - in a real implementation, this could use NLP libraries
-            var words = prompt.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-            // Look for partnership-related terms
-            var partnershipTerms = new[] { "partner", "partnership", "revenue", "tier", "percentage", "sharing", "agreement", "contract" };
-            var financialTerms = new[] { "%", "percent", "dollar", "$", "cost", "fee", "payment" };
-            var companyIndicators = new[] { "Inc", "LLC", "Corp", "Company", "Ltd" };
-
-            foreach (var word in words)
+            // Use Agent Framework RunAsync with structured output configuration
+            var options = new ChatClientAgentRunOptions
             {
-                var cleanWord = word.Trim('.', ',', '?', '!', ';', ':').ToLowerInvariant();
+                ChatOptions = _chatOptions
+            };
 
-                if (partnershipTerms.Contains(cleanWord))
-                {
-                    entities.Add(new ExtractedEntity
-                    {
-                        Text = word.Trim('.', ',', '?', '!', ';', ':'),
-                        Type = "partnership_term",
-                        Confidence = 0.9
-                    });
-                }
-                else if (financialTerms.Any(t => cleanWord.Contains(t)))
-                {
-                    entities.Add(new ExtractedEntity
-                    {
-                        Text = word.Trim('.', ',', '?', '!', ';', ':'),
-                        Type = "financial",
-                        Confidence = 0.8
-                    });
-                }
-                else if (companyIndicators.Any(c => word.Contains(c)))
-                {
-                    entities.Add(new ExtractedEntity
-                    {
-                        Text = word.Trim('.', ',', '?', '!', ';', ':'),
-                        Type = "company",
-                        Confidence = 0.7
-                    });
-                }
+            var response = await RunAsync(agentMessage, options: options);
+
+            if (string.IsNullOrWhiteSpace(response.Text))
+            {
+                Logger.LogWarning("No response from entity resolution agent for prompt: {Prompt}", prompt);
+                return [];
             }
 
-            // Remove duplicates and ensure we have at least some entities
-            entities = entities.GroupBy(e => e.Text.ToLowerInvariant())
-                             .Select(g => g.First())
-                             .ToList();
-
-            if (entities.Count == 0)
+            try
             {
-                entities.Add(new ExtractedEntity
-                {
-                    Text = "general inquiry",
-                    Type = "general",
-                    Confidence = 0.6
-                });
-            }
+                // With structured output, the response is guaranteed to match the schema
+                var entityResponse = JsonSerializer.Deserialize<EntityResolutionResponse>(
+                    response.Text,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                );
 
-            Logger.LogInformation("Extracted {Count} entities", entities.Count);
-            return entities;
+                if (entityResponse == null || entityResponse.ExtractedEntities == null)
+                {
+                    Logger.LogWarning("Failed to deserialize entity response, returning empty list");
+                    return [];
+                }
+
+                Logger.LogInformation("Extracted {Count} entities", entityResponse.ExtractedEntities.Count);
+                return entityResponse.ExtractedEntities;
+            }
+            catch (JsonException jsonEx)
+            {
+                Logger.LogWarning(jsonEx, "Failed to deserialize entity response. Content: {Content}", response.Text);
+                return [];
+            }
         }
         catch (Exception ex) when (LogException(ex, $"Error extracting entities from prompt: {prompt}"))
         {
-            return new List<ExtractedEntity>
-            {
-                new ExtractedEntity
-                {
-                    Text = "error",
-                    Type = "general",
-                    Confidence = 0.1
-                }
-            };
+            return [];
         }
     }
 

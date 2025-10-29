@@ -1,15 +1,22 @@
-﻿using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
+﻿using Microsoft.Extensions.AI;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace PartnershipAgent.Core.Services;
 
+/// <summary>
+/// Service for managing chat history using Agent Framework types.
+/// </summary>
 public interface IChatHistoryService
 {
-    Task AddMessageToChatHistoryAsync(Guid thread_id, ChatMessageContent chatMessage);
-    Task<ChatHistory> GetChatHistoryAsync(Guid thread_id);
+    /// <summary>
+    /// Adds a message to the chat history for a specific thread.
+    /// </summary>
+    Task AddMessageToChatHistoryAsync(Guid threadId, ChatMessage message);
+
+    /// <summary>
+    /// Retrieves the complete chat history for a specific thread.
+    /// </summary>
+    Task<IList<ChatMessage>> GetChatHistoryAsync(Guid threadId);
 }

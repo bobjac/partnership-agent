@@ -12,6 +12,7 @@ using OpenTelemetry.Trace;
 using PartnershipAgent.Core.Agents;
 using PartnershipAgent.Core.Evaluation;
 using PartnershipAgent.Core.Services;
+using PartnershipAgent.Core.Workflows;
 using System;
 using Microsoft.Extensions.AI;
 
@@ -86,8 +87,8 @@ var azureOpenAIDeploymentName = builder.Configuration["AzureOpenAI:DeploymentNam
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
     ?? "gpt-35-turbo";
 
-var azureOpenAIApiVersion = builder.Configuration["AzureOpenAI:ApiVersion"] 
-    ?? "2024-02-15-preview";
+var azureOpenAIApiVersion = builder.Configuration["AzureOpenAI:ApiVersion"]
+    ?? "2024-08-01-preview"; // Required for structured output (json_schema)
 var elasticSearchUri = builder.Configuration["ElasticSearch:Uri"] ?? "http://localhost:9200";
 var elasticUsername = builder.Configuration["ElasticSearch:Username"];
 var elasticPassword = builder.Configuration["ElasticSearch:Password"];
@@ -96,12 +97,17 @@ var elasticPassword = builder.Configuration["ElasticSearch:Password"];
 // Register IChatClient for Agent Framework (v2) agents
 builder.Services.AddSingleton<IChatClient>(provider =>
 {
+    // For Azure OpenAI, construct the full deployment-specific endpoint with api-version
+    // Format: https://{resource}.openai.azure.com/openai/deployments/{deployment}/?api-version={version}
+    var baseUri = new Uri(azureOpenAIEndpoint.TrimEnd('/'));
+    var azureChatEndpoint = new Uri(baseUri, $"openai/deployments/{azureOpenAIDeploymentName}/?api-version={azureOpenAIApiVersion}");
+
     var chatClient = new OpenAI.Chat.ChatClient(
         model: azureOpenAIDeploymentName,
         credential: new System.ClientModel.ApiKeyCredential(azureOpenAIApiKey),
         options: new OpenAI.OpenAIClientOptions()
         {
-            Endpoint = new Uri(azureOpenAIEndpoint)
+            Endpoint = azureChatEndpoint
         });
     return chatClient.AsIChatClient();
 });
@@ -224,8 +230,8 @@ else
     Console.WriteLine("[SEARCH] Using traditional Elasticsearch");
 }
 
-// Register the workflow orchestration service (Agent Framework)
-builder.Services.AddScoped<WorkflowOrchestrationService>();
+// Register the workflow service using Agent Framework's formal WorkflowBuilder pattern
+builder.Services.AddScoped<PartnershipWorkflowService>();
 
 // Register ground truth service
 builder.Services.AddSingleton<IGroundTruthService, GroundTruthService>();

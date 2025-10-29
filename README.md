@@ -303,6 +303,10 @@ Detailed guides available in the `/docs` directory:
 - **[Timeout Troubleshooting](docs/TIMEOUT_TROUBLESHOOTING.md)** - Network and timeout issues
 - **[No Timeouts Configuration](docs/NO_TIMEOUTS_CONFIG.md)** - Disable timeout configurations
 
+### Architecture & Migration
+- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Complete guide for migrating from Semantic Kernel to Agent Framework
+- **[Migration Changes](docs/CHANGES.md)** - Detailed changelog of the migration in this project
+
 ## 🧩 Project Structure
 
 ```
@@ -337,8 +341,9 @@ partnership-agent/
 
 ### AI Integration
 - **Azure OpenAI** for natural language understanding
-- **Semantic Kernel** for agent orchestration
-- **Step-based processing** with entity resolution and response generation
+- **Microsoft Agent Framework** (v1.0) for agent orchestration with structured output support
+- **Step-based workflow** with intelligent scoping, entity resolution, document search, and response generation
+- **Structured JSON output** for reliable agent responses
 
 ## ⚙️ Configuration Options
 

@@ -383,7 +383,7 @@ public class CrossPlatformSetup
         Console.WriteLine("\n💾 Setting up SQLite container...");
 
         // Check if Docker is available
-        if (!await RunCommand("docker", "--version", outputToConsole: false))
+        if (!await RunCommand("docker", "--version", ignoreErrors: false))
         {
             Console.WriteLine("❌ Docker is required for SQLite setup but not found");
             return false;
@@ -391,8 +391,8 @@ public class CrossPlatformSetup
 
         // Stop any existing SQLite container
         Console.WriteLine("🛑 Stopping existing SQLite container...");
-        await RunCommand("docker", "stop partnership-agent-sqlite", outputToConsole: false);
-        await RunCommand("docker", "rm partnership-agent-sqlite", outputToConsole: false);
+        await RunCommand("docker", "stop partnership-agent-sqlite", ignoreErrors: true);
+        await RunCommand("docker", "rm partnership-agent-sqlite", ignoreErrors: true);
 
         // Build SQLite container
         Console.WriteLine("🔨 Building SQLite container...");
